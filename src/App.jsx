@@ -72,18 +72,18 @@ function extrairNumeroMesPorExtenso(texto) {
 // ============================================================================
 function App() {
   const mesesDoAno = [
-    { num: 1, nome: 'Janeiro' },
-    { num: 2, nome: 'Fevereiro' },
-    { num: 3, nome: 'Março' },
-    { num: 4, nome: 'Abril' },
-    { num: 5, nome: 'Maio' },
-    { num: 6, nome: 'Junho' },
-    { num: 7, nome: 'Julho' },
-    { num: 8, nome: 'Agosto' },
-    { num: 9, nome: 'Setembro' },
-    { num: 10, nome: 'Outubro' },
-    { num: 11, nome: 'Novembro' },
-    { num: 12, nome: 'Dezembro' },
+    { num: 1, nome: 'Janeiro', sigla: 'jan' },
+    { num: 2, nome: 'Fevereiro', sigla: 'fev' },
+    { num: 3, nome: 'Março', sigla: 'mar' },
+    { num: 4, nome: 'Abril', sigla: 'abr' },
+    { num: 5, nome: 'Maio', sigla: 'mai' },
+    { num: 6, nome: 'Junho', sigla: 'jun' },
+    { num: 7, nome: 'Julho', sigla: 'jul' },
+    { num: 8, nome: 'Agosto', sigla: 'ago' },
+    { num: 9, nome: 'Setembro', sigla: 'set' },
+    { num: 10, nome: 'Outubro', sigla: 'out' },
+    { num: 11, nome: 'Novembro', sigla: 'nov' },
+    { num: 12, nome: 'Dezembro', sigla: 'dez' },
   ];
 
   // --- ESTADOS DE AUTENTICAÇÃO ---
@@ -92,7 +92,7 @@ function App() {
   const [senhaInput, setSenhaInput] = useState('');
   const [erroLogin, setErroLogin] = useState('');
 
-  // --- ESTADOS GERAIS (MODO ESCURO PADRÃO DE FÁBRICA) ---
+  // --- ESTADOS GERAIS ---
   const [activeTab, setActiveTab] = useState('frota');
   const [filialAtual, setFilialAtual] = useState('Todas');
   const [subAbaFrota, setSubAbaFrota] = useState('preventivas');
@@ -112,9 +112,6 @@ function App() {
   );
   const [mesSelecionadoTacoGerencial, setMesSelecionadoTacoGerencial] =
     useState(new Date().getMonth() + 1);
-  const [anoSelecionadoHistorico, setAnoSelecionadoHistorico] = useState(
-    new Date().getFullYear()
-  );
 
   // --- INTERAÇÃO DE FILTRO DOS CARDS ---
   const [statusFiltroCard, setStatusFiltroCard] = useState('TODOS');
@@ -123,10 +120,6 @@ function App() {
   // --- INTERRUPTORES DE SUBSTITUIÇÃO ---
   const [substituirFrota, setSubstituirFrota] = useState(false);
   const [substituirTaco, setSubstituirTaco] = useState(false);
-
-  // --- CHECKBOXES DE SELEÇÃO ---
-  const [selecionadosPrev, setSelecionadosPrev] = useState([]);
-  const [selecionadosTaco, setSelecionadosTaco] = useState([]);
 
   // --- DADOS REAIS DO BANCO ---
   const [veiculos, setVeiculos] = useState([]);
@@ -174,7 +167,7 @@ function App() {
       setAutenticado(true);
       setErroLogin('');
     } else {
-      setErroLogin('Usuário ou senha inválidos!');
+      setErroLogin('Usuário ou senha inválidos operacionalmente!');
     }
   };
 
@@ -182,7 +175,7 @@ function App() {
   const limparTodaTabelaPreventivas = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de preventivas. Tem certeza absoluta que quer fazer isso?'
+        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de preventivas no Supabase. Tem certeza absoluta que quer fazer isso?'
       )
     ) {
       setCarregando(true);
@@ -205,7 +198,7 @@ function App() {
   const limparTodaTabelaTacografos = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de tacógrafos. Tem certeza absoluta que quer fazer isso?'
+        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de tacógrafos no Supabase. Tem certeza absoluta que quer fazer isso?'
       )
     ) {
       setCarregando(true);
@@ -225,14 +218,14 @@ function App() {
     }
   };
 
-  // --- IMPORTAÇÃO 1: PREVENTIVAS BASEADAS NO MÊS DA COLUNA O (ÍNDICE 14) ---
+  // --- IMPORTAÇÃO 1: PREVENTIVAS ---
   const lidarComImportacaoPreventivas = (e) => {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
     if (
       substituirFrota &&
       !confirm(
-        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir operação ativa. Isso limpará todos os registros existentes (inclusive os Concluídos/Em Dia) para evitar duplicatas. Deseja prosseguir?'
+        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir a malha ativa. Isso limpará todos os registros existentes. Deseja prosseguir?'
       )
     ) {
       e.target.value = '';
@@ -300,7 +293,6 @@ function App() {
             ano_referencia: '2026',
           });
         }
-
         if (substituirFrota) {
           await supabase
             .from('preventivas')
@@ -310,7 +302,7 @@ function App() {
         await supabase
           .from('preventivas')
           .insert(Array.from(mapaPreventivasUnicas.values()));
-        alert('Operação de Preventivas por Mês sincronizada!');
+        alert('Malha de Preventivas por Mês sincronizada!');
         fetchDados();
       } catch (err) {
         alert(err.message);
@@ -322,14 +314,14 @@ function App() {
     leitor.readAsBinaryString(arquivo);
   };
 
-  // --- IMPORTAÇÃO 2: TACOGRAFOS MAPEADOS SIMETRICAMENTE CONFORME COLUNA L ---
+  // --- IMPORTAÇÃO 2: TACOGRAFOS ---
   const lidarComImportacaoTacografos = (e) => {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
     if (
       substituirTaco &&
       !confirm(
-        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir a operação ativa. Isso limpará tudo de antigo do banco de dados para evitar duplicatas. Deseja prosseguir?'
+        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir a malha ativa. Deseja prosseguir?'
       )
     ) {
       e.target.value = '';
@@ -394,7 +386,7 @@ function App() {
         await supabase
           .from('tacografos')
           .insert(Array.from(mapaTacoUnicos.values()));
-        alert('Painel de Tacógrafos atualizado!');
+        alert('Painel de Tacógrafos atualizado com sucesso!');
         fetchDados();
       } catch (err) {
         alert(err.message);
@@ -440,7 +432,9 @@ function App() {
     (t) => t.status !== 'Concluído'
   );
 
-  // Filtros Gerenciais Estruturados por Mês por Extenso
+  // ============================================================================
+  // --- ABA GERENCIAL 1: REGRAS DE PREVENTIVAS ---
+  // ============================================================================
   const preventivasDoMesHistorico = prevsFiltradasFila.filter((p) => {
     if (!p.mes_referencia) return false;
     return (
@@ -448,13 +442,28 @@ function App() {
       Number(mesSelecionadoHistorico)
     );
   });
+
   const preventivasSemDataFilaGeral = prevsFiltradasFila.filter(
-    (p) => !p.mes_referencia
+    (p) => !p.mes_referencia || String(p.mes_referencia).trim() === ''
+  );
+
+  // Mapeamento dos 12 meses para o gráfico estilo "Meta vs Receita" de Preventivas
+  const contagemPorMesPrev = mesesDoAno.map((m) => {
+    const qtd = prevsFiltradasFila.filter(
+      (p) => extrairNumeroMesPorExtenso(p.mes_referencia) === m.num
+    ).length;
+    return { ...m, qtd };
+  });
+
+  const maxQtdMesesPrev = Math.max(
+    ...contagemPorMesPrev.map((m) => m.qtd),
+    preventivasSemDataFilaGeral.length,
+    1
   );
 
   const totalGeralMes = preventivasDoMesHistorico.length || 1;
   const qtdEmDiaComData = preventivasDoMesHistorico.filter(
-    (p) => p.status === 'Concluído'
+    (p) => p.status === 'Concluído' || p.status === 'EM DIA'
   ).length;
   const qtdExecucaoComData = preventivasDoMesHistorico.filter(
     (p) => p.status === 'EM EXECUÇÃO' || p.status === 'OFICINA'
@@ -462,8 +471,12 @@ function App() {
   const qtdAVencerComData = preventivasDoMesHistorico.filter(
     (p) => p.status === 'A VENCER'
   ).length;
+  // TRATAMENTO UNIFICADO: VENCIDA / VENCIDAS / VENCIDO
   const qtdVencidasComData = preventivasDoMesHistorico.filter(
-    (p) => p.status === 'VENCIDA' || p.status === 'VENCIDAS'
+    (p) =>
+      p.status === 'VENCIDA' ||
+      p.status === 'VENCIDAS' ||
+      p.status === 'VENCIDO'
   ).length;
 
   const pctEmDia = ((qtdEmDiaComData / totalGeralMes) * 100).toFixed(1);
@@ -471,44 +484,23 @@ function App() {
   const pctAVencer = ((qtdAVencerComData / totalGeralMes) * 100).toFixed(1);
   const pctVencidas = ((qtdVencidasComData / totalGeralMes) * 100).toFixed(1);
 
-  const qtdEmDiaSemData = preventivasSemDataFilaGeral.filter(
-    (p) => p.status === 'Concluído'
-  ).length;
-  const qtdExecucaoSemData = preventivasSemDataFilaGeral.filter(
-    (p) => p.status === 'EM EXECUÇÃO' || p.status === 'OFICINA'
-  ).length;
-  const qtdAVencerSemData = preventivasSemDataFilaGeral.filter(
-    (p) => p.status === 'A VENCER'
-  ).length;
-  const qtdVencidasSemData = preventivasSemDataFilaGeral.filter(
-    (p) => p.status === 'VENCIDA' || p.status === 'VENCIDAS'
-  ).length;
-
-  const totalEmDiaGrafico = qtdEmDiaComData + qtdEmDiaSemData;
-  const totalExecucaoGrafico = qtdExecucaoComData + qtdExecucaoSemData;
-  const totalAVencerGrafico = qtdAVencerComData + qtdAVencerSemData;
-  const totalVencidasGrafico = qtdVencidasComData + qtdVencidasSemData;
-  const maximoMetricaGrafico = Math.max(
-    totalEmDiaGrafico,
-    totalExecucaoGrafico,
-    totalAVencerGrafico,
-    totalVencidasGrafico,
-    1
-  );
-
   const listagemFiltradaCardsChefe = (
     statusFiltroCard === 'SEM DATA'
       ? preventivasSemDataFilaGeral
       : preventivasDoMesHistorico
   ).filter((p) => {
     let passaCard = true;
-    if (statusFiltroCard === 'EM DIA') passaCard = p.status === 'Concluído';
+    if (statusFiltroCard === 'EM DIA')
+      passaCard = p.status === 'Concluído' || p.status === 'EM DIA';
     else if (statusFiltroCard === 'EM EXECUÇÃO')
       passaCard = p.status === 'EM EXECUÇÃO' || p.status === 'OFICINA';
     else if (statusFiltroCard === 'A VENCER')
       passaCard = p.status === 'A VENCER';
     else if (statusFiltroCard === 'VENCIDAS')
-      passaCard = p.status === 'VENCIDA' || p.status === 'VENCIDAS';
+      passaCard =
+        p.status === 'VENCIDA' ||
+        p.status === 'VENCIDAS' ||
+        p.status === 'VENCIDO';
 
     let passaBusca =
       !termoBuscaGerencial ||
@@ -527,8 +519,29 @@ function App() {
       Number(mesSelecionadoTacoGerencial)
     );
   });
+
+  const tacosAnosFuturos = tacosFiltradosFila.filter((t) => {
+    if (!t.mes_referencia) return false;
+    const ref = String(t.mes_referencia).trim();
+    return /^\d{4}$/.test(ref) && Number(ref) > 2026;
+  });
+
   const tacosSemDataFilaGeral = tacosFiltradosFila.filter(
-    (t) => !t.mes_referencia
+    (t) => !t.mes_referencia || String(t.mes_referencia).trim() === ''
+  );
+
+  const contagemPorMesTaco = mesesDoAno.map((m) => {
+    const qtd = tacosFiltradosFila.filter(
+      (t) => extrairNumeroMesPorExtenso(t.mes_referencia) === m.num
+    ).length;
+    return { ...m, qtd };
+  });
+
+  const maxQtdMesesTaco = Math.max(
+    ...contagemPorMesTaco.map((m) => m.qtd),
+    tacosAnosFuturos.length,
+    tacosSemDataFilaGeral.length,
+    1
   );
 
   const totalTacosGeralMes = tacosDoMesHistorico.length || 1;
@@ -541,8 +554,12 @@ function App() {
   const qtdTacoAVencerComData = tacosDoMesHistorico.filter(
     (t) => t.status === 'A VENCER'
   ).length;
+  // TRATAMENTO UNIFICADO TACOGRAFO: VENCIDA / VENCIDAS / VENCIDO
   const qtdTacoVencidasComData = tacosDoMesHistorico.filter(
-    (t) => t.status === 'VENCIDA' || t.status === 'VENCIDAS'
+    (t) =>
+      t.status === 'VENCIDA' ||
+      t.status === 'VENCIDAS' ||
+      t.status === 'VENCIDO'
   ).length;
 
   const pctTacoEmDia = (
@@ -562,39 +579,14 @@ function App() {
     100
   ).toFixed(1);
 
-  const qtdTacoEmDiaSemData = tacosSemDataFilaGeral.filter(
-    (t) => t.status === 'Concluído' || t.status === 'EM DIA'
-  ).length;
-  const qtdTacoExecucaoSemData = tacosSemDataFilaGeral.filter(
-    (t) => t.status === 'EM EXECUÇÃO' || t.status === 'OFICINA'
-  ).length;
-  const qtdTacoAVencerSemData = tacosSemDataFilaGeral.filter(
-    (t) => t.status === 'A VENCER'
-  ).length;
-  const qtdTacoVencidasSemData = tacosSemDataFilaGeral.filter(
-    (t) => t.status === 'VENCIDA' || t.status === 'VENCIDAS'
-  ).length;
+  let baseTacosLista = tacosDoMesHistorico;
+  if (statusFiltroCardTaco === 'SEM DATA') {
+    baseTacosLista = tacosSemDataFilaGeral;
+  } else if (statusFiltroCardTaco === 'FUTUROS') {
+    baseTacosLista = tacosAnosFuturos;
+  }
 
-  const totalTacoEmDiaGrafico = qtdTacoEmDiaComData + qtdTacoEmDiaSemData;
-  const totalTacoExecucaoGrafico =
-    qtdTacoExecucaoComData + qtdTacoExecucaoSemData;
-  const totalTacoAVencerGrafico = qtdTacoAVencerComData + qtdTacoAVencerSemData;
-  const totalTacoVencidasGrafico =
-    qtdTacoVencidasComData + qtdTacoVencidasSemData;
-  const maximoMetricaTacoGrafico = Math.max(
-    totalTacoEmDiaGrafico,
-    totalTacoExecucaoGrafico,
-    totalTacoAVencerGrafico,
-    totalTacoVencidasGrafico,
-    1
-  );
-
-  // CORREÇÃO: Variável 'passaCard' corrigida para matar o TypeError
-  const listagemFiltradaTacosChefe = (
-    statusFiltroCardTaco === 'SEM DATA'
-      ? tacosSemDataFilaGeral
-      : tacosDoMesHistorico
-  ).filter((t) => {
+  const listagemFiltradaTacosChefe = baseTacosLista.filter((t) => {
     let passaCard = true;
     if (statusFiltroCardTaco === 'EM DIA')
       passaCard = t.status === 'Concluído' || t.status === 'EM DIA';
@@ -603,7 +595,10 @@ function App() {
     else if (statusFiltroCardTaco === 'A VENCER')
       passaCard = t.status === 'A VENCER';
     else if (statusFiltroCardTaco === 'VENCIDAS')
-      passaCard = t.status === 'VENCIDA' || t.status === 'VENCIDAS';
+      passaCard =
+        t.status === 'VENCIDA' ||
+        t.status === 'VENCIDAS' ||
+        t.status === 'VENCIDO';
 
     let passaBusca =
       !termoBuscaGerencialTaco ||
@@ -624,7 +619,7 @@ function App() {
               Painel Frota PepsiCo
             </h1>
             <p className="text-xs text-gray-400 mt-1">
-              Controle de preventivas e tacógrafos
+              Acesso à Malha Logística Assinado
             </p>
           </div>
           <form onSubmit={lidarComLogin} className="space-y-5">
@@ -658,9 +653,7 @@ function App() {
         <div className="mt-8 text-center">
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
             Operado por{' '}
-            <span className="text-orange-400 font-black">
-              Fidel Barbosa - Opentech
-            </span>
+            <span className="text-orange-400 font-black">Opentech</span>
           </p>
         </div>
       </div>
@@ -773,7 +766,9 @@ function App() {
         {activeTab === 'frota' && (
           <div className="max-w-6xl mx-auto space-y-6 animate-fadeIn">
             <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-              <h2 className="text-xl font-bold">Painel Operacional</h2>
+              <h2 className="text-xl font-bold">
+                Painel Operacional Logístico
+              </h2>
               <div className="flex p-1 rounded-xl border border-gray-800 bg-[#111A33]">
                 <button
                   onClick={() => setSubAbaFrota('preventivas')}
@@ -789,7 +784,7 @@ function App() {
                   onClick={() => setSubAbaFrota('tacografos')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
                     subAbaFrota === 'tacografos'
-                      ? 'bg-blue-500/10 text-[#0000FF]'
+                      ? 'bg-blue-50/10 text-[#0000FF]'
                       : 'text-gray-400'
                   }`}
                 >
@@ -803,10 +798,10 @@ function App() {
                 <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex justify-between items-center gap-4">
                   <div className="flex-1">
                     <h3 className="text-sm font-black uppercase text-orange-400">
-                      🛠️ Importar preventivas
+                      🛠️ Importar Excel de preventivas
                     </h3>
                     <p className="text-[11px] opacity-70 mt-1">
-                      Sincronização aba "PREVENTIVAS SUL2".
+                      Selecione a opção abaixo para evitar placas duplicadas.
                     </p>
                     <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-gray-400">
                       <input
@@ -815,7 +810,7 @@ function App() {
                         onChange={(e) => setSubstituirFrota(e.target.checked)}
                         className="accent-orange-500"
                       />
-                      Substituir operação ativa (Limpa duplicadas do Em Dia)
+                      Substituir arquivo atual
                     </label>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 shrink-0">
@@ -913,10 +908,10 @@ function App() {
                 <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex justify-between items-center gap-4">
                   <div className="flex-1">
                     <h3 className="text-sm font-black uppercase text-blue-400">
-                      ⏱️ Importar Tacógrafos
+                      ⏱️ Importar excel de Tacógrafos
                     </h3>
                     <p className="text-[11px] opacity-70 mt-1">
-                      Sincronização aba "Base de Controle".
+                      Selecione a opção abaixo para evitar placas duplicadas.
                     </p>
                     <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-gray-400">
                       <input
@@ -925,8 +920,7 @@ function App() {
                         onChange={(e) => setSubstituirTaco(e.target.checked)}
                         className="accent-blue-500"
                       />
-                      Substituir registros ativos (Zera qualquer placa
-                      duplicada)
+                      Substituir arquivo atual
                     </label>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 shrink-0">
@@ -954,7 +948,7 @@ function App() {
                     type="text"
                     value={termoBuscaTaco}
                     onChange={(e) => setTermoBuscaTaco(e.target.value)}
-                    placeholder="Pesquisar tacógrafo ativo..."
+                    placeholder="Pesquisar laudo ativo..."
                     className="bg-transparent w-full outline-none text-xs text-white"
                   />
                 </div>
@@ -969,7 +963,7 @@ function App() {
                           <th className="p-4 font-bold text-blue-400">
                             Filial / Sede
                           </th>
-                          <th className="p-4">Mês Meta</th>
+                          <th className="p-4">Mês / Ano Meta</th>
                           <th className="p-4">Validade Legal</th>
                           <th className="p-4 text-right">Ação</th>
                         </tr>
@@ -1023,30 +1017,35 @@ function App() {
           </div>
         )}
 
+        {/* --- TELA 2: ABA STATUS PREVENTIVAS --- */}
         {activeTab === 'historico_mensal' && (
           <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">
-                  Painel de Status de Preventivas
+                <h2 className="text-2xl font-bold tracking-tight text-white">
+                  Cronograma de Preventivas
                 </h2>
                 <p className="text-gray-400 text-xs mt-0.5">
-                  Clique nos blocos para visualização. Dados sem mês foram para
-                  "SEM MÊS".
+                  Indicadores operacionais e controle por mês.
                 </p>
               </div>
-              <div className="flex items-center gap-1 p-2 rounded-xl border border-gray-700 bg-[#1C2541] text-xs font-bold text-white">
+              <div className="flex items-center gap-2 p-2 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
                 <Clock size={14} className="text-[#FFA500]" />
+                <span className="text-gray-400 text-[11px]">Mês:</span>
                 <select
                   value={mesSelecionadoHistorico}
                   onChange={(e) => {
                     setMesSelecionadoHistorico(e.target.value);
                     setStatusFiltroCard('TODOS');
                   }}
-                  className="bg-transparent outline-none cursor-pointer font-black text-white"
+                  className="bg-transparent outline-none cursor-pointer font-black text-orange-400 uppercase"
                 >
                   {mesesDoAno.map((m) => (
-                    <option key={m.num} value={m.num} className="bg-[#1C2541]">
+                    <option
+                      key={m.num}
+                      value={m.num}
+                      className="bg-[#1C2541] text-white"
+                    >
                       {m.nome}
                     </option>
                   ))}
@@ -1054,6 +1053,7 @@ function App() {
               </div>
             </div>
 
+            {/* CARDS MESTRES DE PREVENTIVAS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <div
                 onClick={() =>
@@ -1178,74 +1178,106 @@ function App() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl border border-gray-800 bg-[#1C2541] shadow-sm">
-              <span className="text-xs font-black text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                📊 Distribuição de Status
-              </span>
-              <div className="h-40 flex items-end justify-around gap-4 pt-8 px-6 text-[10px] font-bold text-gray-400 border-b border-gray-700/20">
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-green-400">
-                    {totalEmDiaGrafico}
-                  </span>
-                  <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-green-600 to-emerald-400 shadow-md"
-                    style={{
-                      height: `${
-                        (totalEmDiaGrafico / maximoMetricaGrafico) * 100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-green-400">
-                    EM DIA
+            {/* GRÁFICO ESTILO PREMIUM DE PREVENTIVAS */}
+            <div className="p-6 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-2xl relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
+                <div>
+                  <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                    <span>📊 Visão Geral</span>
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    Frota por mês (Clique em uma coluna para selecionar o mês)
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 bg-[#0B1329] p-1.5 rounded-xl border border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 px-2 uppercase">
+                    Visão 2026
                   </span>
                 </div>
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-orange-400">
-                    {totalExecucaoGrafico}
-                  </span>
-                  <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-orange-600 whitespace-nowrap to-amber-500 shadow-md"
-                    style={{
-                      height: `${
-                        (totalExecucaoGrafico / maximoMetricaGrafico) * 100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-orange-400">
-                    EM EXEC.
-                  </span>
+              </div>
+
+              <div className="relative pt-6 pb-2">
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20 border-b border-gray-700">
+                  <div className="border-b border-gray-600 w-full"></div>
+                  <div className="border-b border-gray-600 w-full"></div>
+                  <div className="border-b border-gray-600 w-full"></div>
+                  <div className="border-b border-gray-600 w-full"></div>
                 </div>
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-yellow-400">
-                    {totalAVencerGrafico}
-                  </span>
+
+                <div className="h-48 flex items-end justify-between gap-1.5 sm:gap-2 px-2 relative z-10">
+                  {contagemPorMesPrev.map((item) => {
+                    const estaSelecionado =
+                      Number(mesSelecionadoHistorico) === item.num;
+                    const alturaPct = Math.max(
+                      (item.qtd / maxQtdMesesPrev) * 100,
+                      4
+                    );
+
+                    return (
+                      <div
+                        key={item.num}
+                        onClick={() => {
+                          setMesSelecionadoHistorico(item.num);
+                          setStatusFiltroCard('TODOS');
+                        }}
+                        className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group"
+                      >
+                        <span
+                          className={`text-[10px] font-black mb-1 transition-all ${
+                            estaSelecionado
+                              ? 'text-orange-400 scale-125'
+                              : 'text-gray-400 group-hover:text-white'
+                          }`}
+                        >
+                          {item.qtd > 0 ? item.qtd : ''}
+                        </span>
+
+                        <div
+                          className={`w-full max-w-[36px] rounded-t-lg transition-all duration-300 ${
+                            estaSelecionado
+                              ? 'bg-gradient-to-t from-rose-600 via-orange-500 to-amber-300 ring-2 ring-orange-400 shadow-lg shadow-orange-500/30'
+                              : 'bg-gradient-to-t from-rose-900/60 via-orange-600/70 to-amber-500/80 group-hover:from-rose-600 group-hover:to-amber-400'
+                          }`}
+                          style={{ height: `${alturaPct}%` }}
+                        ></div>
+
+                        <span
+                          className={`mt-3 text-[11px] font-bold uppercase transition-all ${
+                            estaSelecionado
+                              ? 'text-orange-400 font-black'
+                              : 'text-gray-400 group-hover:text-white'
+                          }`}
+                        >
+                          {item.sigla}
+                        </span>
+                      </div>
+                    );
+                  })}
+
                   <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-yellow-400 to-yellow-500 shadow-md"
-                    style={{
-                      height: `${
-                        (totalAVencerGrafico / maximoMetricaGrafico) * 100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-yellow-400">
-                    A VENCER
-                  </span>
-                </div>
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-red-400">
-                    {totalVencidasGrafico}
-                  </span>
-                  <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-red-600 to-rose-500 shadow-md"
-                    style={{
-                      height: `${
-                        (totalVencidasGrafico / maximoMetricaGrafico) * 100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-red-400">
-                    VENCIDAS
-                  </span>
+                    onClick={() => setStatusFiltroCard('SEM DATA')}
+                    className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group border-l border-gray-800 pl-1"
+                  >
+                    <span className="text-[10px] font-black text-gray-400 mb-1 group-hover:scale-110 transition-all">
+                      {preventivasSemDataFilaGeral.length > 0
+                        ? preventivasSemDataFilaGeral.length
+                        : ''}
+                    </span>
+                    <div
+                      className="w-full max-w-[36px] rounded-t-lg bg-gradient-to-t from-gray-700 via-gray-600 to-gray-400 transition-all group-hover:brightness-125"
+                      style={{
+                        height: `${Math.max(
+                          (preventivasSemDataFilaGeral.length /
+                            maxQtdMesesPrev) *
+                            100,
+                          4
+                        )}%`,
+                      }}
+                    ></div>
+                    <span className="mt-3 text-[10px] font-bold uppercase text-gray-400">
+                      s/m
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1256,7 +1288,7 @@ function App() {
                 type="text"
                 value={termoBuscaGerencial}
                 onChange={(e) => setTermoBuscaGerencial(e.target.value)}
-                placeholder="Pesquisar por Placa, CDV..."
+                placeholder="Filtrar por Placa ou CDV"
                 className="bg-transparent w-full outline-none text-xs text-white"
               />
             </div>
@@ -1264,7 +1296,7 @@ function App() {
             <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
               <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-500/5">
                 <div className="font-bold text-xs uppercase text-gray-400">
-                  Fila Selecionada:{' '}
+                  Lista:{' '}
                   <span className="text-blue-400 font-black">
                     {statusFiltroCard}
                   </span>{' '}
@@ -1277,7 +1309,7 @@ function App() {
                     <tr>
                       <th className="p-4">Placa</th>
                       <th className="p-4">Filial</th>
-                      <th className="p-4">CDV Logístico</th>
+                      <th className="p-4">CDV</th>
                       <th className="p-4">KM Atual</th>
                       <th className="p-4 text-orange-400">Mês Meta</th>
                       <th className="p-4">Oficina Destino</th>
@@ -1310,7 +1342,7 @@ function App() {
                         <td className="p-4">
                           <span
                             className={`text-[10px] font-black px-2 py-0.5 rounded ${
-                              p.status === 'Concluído'
+                              p.status === 'Concluído' || p.status === 'EM DIA'
                                 ? 'bg-green-500/10 text-green-500'
                                 : p.status === 'EM EXECUÇÃO' ||
                                   p.status === 'OFICINA'
@@ -1320,7 +1352,9 @@ function App() {
                                 : 'bg-red-50/10 text-red-500'
                             }`}
                           >
-                            {p.status === 'Concluído' ? 'EM DIA' : p.status}
+                            {p.status === 'Concluído' || p.status === 'EM DIA'
+                              ? 'EM DIA'
+                              : p.status}
                           </span>
                         </td>
                         <td className="p-4 text-gray-400 italic">
@@ -1338,33 +1372,35 @@ function App() {
           </div>
         )}
 
-        {/* ============================================================================ */}
         {/* --- TELA 3: ABA STATUS TACOGRAFOS --- */}
-        {/* ============================================================================ */}
         {activeTab === 'status_tacografos' && (
           <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">
-                  Painel de Status de Tacógrafos
+                <h2 className="text-2xl font-bold tracking-tight text-white">
+                  Cronograma de Tacógrafos
                 </h2>
                 <p className="text-gray-400 text-xs mt-0.5">
-                  Clique nos blocos para visualização. Dados sem mês foram para
-                  "SEM MÊS".
+                  Indicadores operacionais e controle por mês e ano.
                 </p>
               </div>
-              <div className="flex items-center gap-1 p-2 rounded-xl border border-gray-700 bg-[#1C2541] text-xs font-bold text-white">
+              <div className="flex items-center gap-2 p-2 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
                 <Clock size={14} className="text-[#0000FF]" />
+                <span className="text-gray-400 text-[11px]">Mês:</span>
                 <select
                   value={mesSelecionadoTacoGerencial}
                   onChange={(e) => {
                     setMesSelecionadoTacoGerencial(e.target.value);
                     setStatusFiltroCardTaco('TODOS');
                   }}
-                  className="bg-transparent outline-none cursor-pointer font-black text-white"
+                  className="bg-transparent outline-none cursor-pointer font-black text-amber-400 uppercase"
                 >
                   {mesesDoAno.map((m) => (
-                    <option key={m.num} value={m.num} className="bg-[#1C2541]">
+                    <option
+                      key={m.num}
+                      value={m.num}
+                      className="bg-[#1C2541] text-white"
+                    >
                       {m.nome}
                     </option>
                   ))}
@@ -1372,32 +1408,34 @@ function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {/* CARDS MESTRES DE TACOGRAFOS */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div
                 onClick={() =>
                   setStatusFiltroCardTaco(
                     statusFiltroCardTaco === 'EM DIA' ? 'TODOS' : 'EM DIA'
                   )
                 }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
                   statusFiltroCardTaco === 'EM DIA'
                     ? 'ring-4 ring-green-400'
                     : ''
                 } bg-gradient-to-br from-green-500 to-emerald-600 text-white`}
               >
                 <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">EM DIA</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[10px] font-black">EM DIA</span>
+                  <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded font-bold">
                     {pctTacoEmDia}%
                   </span>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
+                <h3 className="text-2xl font-black mt-2">
                   {String(qtdTacoEmDiaComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
+                  <span className="text-[9px] font-normal opacity-80">
                     Placas
                   </span>
                 </h3>
               </div>
+
               <div
                 onClick={() =>
                   setStatusFiltroCardTaco(
@@ -1406,175 +1444,257 @@ function App() {
                       : 'EM EXECUÇÃO'
                   )
                 }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
                   statusFiltroCardTaco === 'EM EXECUÇÃO'
                     ? 'ring-4 ring-orange-400'
                     : ''
                 } bg-gradient-to-br from-orange-500 to-amber-600 text-white`}
               >
                 <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">EM EXECUÇÃO</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[10px] font-black">EM EXEC.</span>
+                  <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded font-bold">
                     {pctTacoExecucao}%
                   </span>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
+                <h3 className="text-2xl font-black mt-2">
                   {String(qtdTacoExecucaoComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
+                  <span className="text-[9px] font-normal opacity-80">
                     Placas
                   </span>
                 </h3>
               </div>
+
               <div
                 onClick={() =>
                   setStatusFiltroCardTaco(
                     statusFiltroCardTaco === 'A VENCER' ? 'TODOS' : 'A VENCER'
                   )
                 }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
                   statusFiltroCardTaco === 'A VENCER'
                     ? 'ring-4 ring-yellow-400'
                     : ''
                 } bg-gradient-to-br from-yellow-400 to-yellow-500 text-gray-900`}
               >
                 <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">A VENCER</span>
-                  <span className="text-[10px] bg-black/10 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[10px] font-black">A VENCER</span>
+                  <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded font-bold">
                     {pctTacoAVencer}%
                   </span>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
+                <h3 className="text-2xl font-black mt-2">
                   {String(qtdTacoAVencerComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-70">
+                  <span className="text-[9px] font-normal opacity-70">
                     Placas
                   </span>
                 </h3>
               </div>
+
               <div
                 onClick={() =>
                   setStatusFiltroCardTaco(
                     statusFiltroCardTaco === 'VENCIDAS' ? 'TODOS' : 'VENCIDAS'
                   )
                 }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
                   statusFiltroCardTaco === 'VENCIDAS'
                     ? 'ring-4 ring-red-500'
                     : ''
                 } bg-gradient-to-br from-red-500 to-rose-600 text-white`}
               >
                 <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">VENCIDAS</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[10px] font-black">VENCIDAS</span>
+                  <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded font-bold">
                     {pctTacoVencidas}%
                   </span>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
+                <h3 className="text-2xl font-black mt-2">
                   {String(qtdTacoVencidasComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
+                  <span className="text-[9px] font-normal opacity-80">
                     Placas
                   </span>
                 </h3>
               </div>
+
+              <div
+                onClick={() =>
+                  setStatusFiltroCardTaco(
+                    statusFiltroCardTaco === 'FUTUROS' ? 'TODOS' : 'FUTUROS'
+                  )
+                }
+                className={`p-3.5 rounded-xl shadow-sm border border-blue-500/30 cursor-pointer transition-all ${
+                  statusFiltroCardTaco === 'FUTUROS'
+                    ? 'ring-4 ring-blue-400'
+                    : ''
+                } bg-gradient-to-br from-blue-600 to-indigo-700 text-white`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-[10px] font-black text-blue-200">
+                    2027+ FUTUROS
+                  </span>
+                  <span className="text-[8px] bg-black/20 text-blue-200 px-1 py-0.5 rounded font-black">
+                    VALIDADE
+                  </span>
+                </div>
+                <h3 className="text-2xl font-black mt-2">
+                  {String(tacosAnosFuturos.length).padStart(2, '0')}{' '}
+                  <span className="text-[9px] font-normal opacity-80">
+                    Placas
+                  </span>
+                </h3>
+              </div>
+
               <div
                 onClick={() =>
                   setStatusFiltroCardTaco(
                     statusFiltroCardTaco === 'SEM DATA' ? 'TODOS' : 'SEM DATA'
                   )
                 }
-                className={`p-4 rounded-xl shadow-sm border border-gray-400 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl shadow-sm border border-gray-400 cursor-pointer transition-all ${
                   statusFiltroCardTaco === 'SEM DATA'
                     ? 'ring-4 ring-gray-400'
                     : ''
                 } bg-gradient-to-br from-gray-600 to-gray-700 text-white`}
               >
                 <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black text-gray-300">
+                  <span className="text-[10px] font-black text-gray-300">
                     SEM MÊS
                   </span>
-                  <span className="text-[9px] bg-black/20 text-blue-400 px-1 py-0.5 rounded font-black">
+                  <span className="text-[8px] bg-black/20 text-blue-400 px-1 py-0.5 rounded font-black">
                     FILA VIVA
                   </span>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
+                <h3 className="text-2xl font-black mt-2">
                   {String(tacosSemDataFilaGeral.length).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
+                  <span className="text-[9px] font-normal opacity-80">
                     Placas
                   </span>
                 </h3>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl border border-gray-800 bg-[#1C2541] shadow-sm">
-              <span className="text-xs font-black text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                📊 Distribuição de status
-              </span>
-              <div className="h-40 flex items-end justify-around gap-4 pt-8 px-6 text-[10px] font-bold text-gray-400 border-b border-gray-700/20">
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-green-400">
-                    {totalTacoEmDiaGrafico}
-                  </span>
-                  <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-green-600 to-emerald-400 shadow-md"
-                    style={{
-                      height: `${
-                        (totalTacoEmDiaGrafico / maximoMetricaTacoGrafico) * 100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-green-400">
-                    EM DIA
+            {/* GRÁFICO ESTILO PREMIUM DE TACOGRAFOS */}
+            <div className="p-6 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-2xl relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
+                <div>
+                  <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                    <span>📊 Visão Geral</span>
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    Frota por mês (Clique em uma coluna para selecionar o mês)
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 bg-[#0B1329] p-1.5 rounded-xl border border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 px-2 uppercase">
+                    Visão 2026
                   </span>
                 </div>
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-orange-400">
-                    {totalTacoExecucaoGrafico}
-                  </span>
-                  <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-orange-600 whitespace-nowrap to-amber-500 shadow-md"
-                    style={{
-                      height: `${
-                        (totalTacoExecucaoGrafico / maximoMetricaTacoGrafico) *
-                        100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-orange-400">
-                    EM EXEC.
-                  </span>
+              </div>
+
+              <div className="relative pt-6 pb-2">
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20 border-b border-gray-700">
+                  <div className="border-b border-gray-600 w-full"></div>
+                  <div className="border-b border-gray-600 w-full"></div>
+                  <div className="border-b border-gray-600 w-full"></div>
+                  <div className="border-b border-gray-600 w-full"></div>
                 </div>
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-yellow-400">
-                    {totalTacoAVencerGrafico}
-                  </span>
+
+                <div className="h-48 flex items-end justify-between gap-1.5 sm:gap-2 px-2 relative z-10">
+                  {contagemPorMesTaco.map((item) => {
+                    const estaSelecionado =
+                      Number(mesSelecionadoTacoGerencial) === item.num;
+                    const alturaPct = Math.max(
+                      (item.qtd / maxQtdMesesTaco) * 100,
+                      4
+                    );
+
+                    return (
+                      <div
+                        key={item.num}
+                        onClick={() => {
+                          setMesSelecionadoTacoGerencial(item.num);
+                          setStatusFiltroCardTaco('TODOS');
+                        }}
+                        className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group"
+                      >
+                        <span
+                          className={`text-[10px] font-black mb-1 transition-all ${
+                            estaSelecionado
+                              ? 'text-amber-400 scale-125'
+                              : 'text-gray-400 group-hover:text-white'
+                          }`}
+                        >
+                          {item.qtd > 0 ? item.qtd : ''}
+                        </span>
+
+                        <div
+                          className={`w-full max-w-[36px] rounded-t-lg transition-all duration-300 ${
+                            estaSelecionado
+                              ? 'bg-gradient-to-t from-rose-600 via-orange-500 to-amber-300 ring-2 ring-amber-400 shadow-lg shadow-orange-500/30'
+                              : 'bg-gradient-to-t from-rose-900/60 via-orange-600/70 to-amber-500/80 group-hover:from-rose-600 group-hover:to-amber-400'
+                          }`}
+                          style={{ height: `${alturaPct}%` }}
+                        ></div>
+
+                        <span
+                          className={`mt-3 text-[11px] font-bold uppercase transition-all ${
+                            estaSelecionado
+                              ? 'text-amber-400 font-black'
+                              : 'text-gray-400 group-hover:text-white'
+                          }`}
+                        >
+                          {item.sigla}
+                        </span>
+                      </div>
+                    );
+                  })}
+
                   <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-yellow-400 to-yellow-500 shadow-md"
-                    style={{
-                      height: `${
-                        (totalTacoAVencerGrafico / maximoMetricaTacoGrafico) *
-                        100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-yellow-400">
-                    A VENCER
-                  </span>
-                </div>
-                <div className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <span className="absolute top-[-20px] text-[11px] font-black text-red-400">
-                    {totalTacoVencidasGrafico}
-                  </span>
+                    onClick={() => setStatusFiltroCardTaco('FUTUROS')}
+                    className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group border-l border-gray-800 pl-1"
+                  >
+                    <span className="text-[10px] font-black text-blue-400 mb-1 group-hover:scale-110 transition-all">
+                      {tacosAnosFuturos.length > 0
+                        ? tacosAnosFuturos.length
+                        : ''}
+                    </span>
+                    <div
+                      className="w-full max-w-[36px] rounded-t-lg bg-gradient-to-t from-blue-900 via-indigo-600 to-cyan-400 transition-all group-hover:brightness-125"
+                      style={{
+                        height: `${Math.max(
+                          (tacosAnosFuturos.length / maxQtdMesesTaco) * 100,
+                          4
+                        )}%`,
+                      }}
+                    ></div>
+                    <span className="mt-3 text-[10px] font-black uppercase text-blue-400">
+                      27+
+                    </span>
+                  </div>
+
                   <div
-                    className="w-full max-w-[60px] rounded-t-lg bg-gradient-to-t from-red-600 to-rose-500 shadow-md"
-                    style={{
-                      height: `${
-                        (totalTacoVencidasGrafico / maximoMetricaTacoGrafico) *
-                        100
-                      }%`,
-                    }}
-                  ></div>
-                  <span className="mt-2 text-[10px] font-black uppercase text-red-400">
-                    VENCIDAS
-                  </span>
+                    onClick={() => setStatusFiltroCardTaco('SEM DATA')}
+                    className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group border-l border-gray-800 pl-1"
+                  >
+                    <span className="text-[10px] font-black text-gray-400 mb-1 group-hover:scale-110 transition-all">
+                      {tacosSemDataFilaGeral.length > 0
+                        ? tacosSemDataFilaGeral.length
+                        : ''}
+                    </span>
+                    <div
+                      className="w-full max-w-[36px] rounded-t-lg bg-gradient-to-t from-gray-700 via-gray-600 to-gray-400 transition-all group-hover:brightness-125"
+                      style={{
+                        height: `${Math.max(
+                          (tacosSemDataFilaGeral.length / maxQtdMesesTaco) *
+                            100,
+                          4
+                        )}%`,
+                      }}
+                    ></div>
+                    <span className="mt-3 text-[10px] font-bold uppercase text-gray-400">
+                      s/m
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1585,7 +1705,7 @@ function App() {
                 type="text"
                 value={termoBuscaGerencialTaco}
                 onChange={(e) => setTermoBuscaGerencialTaco(e.target.value)}
-                placeholder="Pesquisar por Placa, CDV..."
+                placeholder="Filtrar por Placa ou CDV"
                 className="bg-transparent w-full outline-none text-xs text-white"
               />
             </div>
@@ -1593,7 +1713,7 @@ function App() {
             <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
               <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-500/5">
                 <div className="font-bold text-xs uppercase text-gray-400">
-                  Fila Laudos:{' '}
+                  Lista:{' '}
                   <span className="text-blue-400 font-black">
                     {statusFiltroCardTaco}
                   </span>{' '}
@@ -1606,10 +1726,10 @@ function App() {
                     <tr>
                       <th className="p-4">Placa</th>
                       <th className="p-4">Modelo</th>
-                      <th className="p-4">CDV Logístico</th>
-                      <th className="p-4 text-blue-400">Filial / Sede</th>
-                      <th className="p-4">Mês Meta</th>
-                      <th className="p-4">Validade Legal</th>
+                      <th className="p-4">CDV</th>
+                      <th className="p-4 text-blue-400">Filial</th>
+                      <th className="p-4">Mês / Ano Meta</th>
+                      <th className="p-4">Validade</th>
                       <th className="p-4">Status</th>
                     </tr>
                   </thead>
@@ -1639,7 +1759,6 @@ function App() {
                               ).toLocaleDateString('pt-BR')
                             : '--'}
                         </td>
-                        {/* CORREÇÃO: Variável 'passaCard' mapeada perfeitamente no loop */}
                         <td className="p-4">
                           <span
                             className={`text-[10px] font-black px-2 py-0.5 rounded ${
