@@ -230,7 +230,7 @@ function App() {
       setAutenticado(true);
       setErroLogin('');
     } else {
-      setErroLogin('Usuário ou senha inválidos operacionalmente!');
+      setErroLogin('Usuário ou senha inválidos!');
     }
   };
 
@@ -238,7 +238,7 @@ function App() {
   const limparTodaTabelaPreventivas = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de preventivas no Supabase. Tem certeza absoluta que quer fazer isso?'
+        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de preventivas. Tem certeza absoluta que quer fazer isso?'
       )
     ) {
       setCarregando(true);
@@ -1209,7 +1209,7 @@ function App() {
               Painel Frota PepsiCo
             </h1>
             <p className="text-xs text-gray-400 mt-1">
-              Acesso à Malha Logística Assinado
+              Gestão operacional
             </p>
           </div>
           <form onSubmit={lidarComLogin} className="space-y-5">
@@ -1236,14 +1236,14 @@ function App() {
               type="submit"
               className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-xs uppercase py-3.5 rounded-xl shadow-md"
             >
-              Autenticar Sistema
+              Acessar
             </button>
           </form>
         </div>
         <div className="mt-8 text-center">
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
             Operado por{' '}
-            <span className="text-orange-400 font-black">Opentech</span>
+            <span className="text-orange-400 font-black">Fidel Barbosa(Opentech)</span>
           </p>
         </div>
       </div>
