@@ -1,19 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
 import * as XLSX from 'xlsx';
 import {
-  MapPin,
   BarChart3,
   CalendarDays,
-  Download,
-  ShieldAlert,
-  Check,
-  Plus,
   Trash2,
   RefreshCw,
   Clock,
-  Sun,
-  Moon,
   ExternalLink,
   Upload,
   Truck,
@@ -21,19 +14,1738 @@ import {
   History,
   DollarSign,
   AlertTriangle,
+  Building2,
+  Box,
+  Layers,
 } from 'lucide-react';
 
 const LINK_POWER_BI = 'https://app.powerbi.com';
 
 // ============================================================================
-// --- FUNÇÃO AUXILIAR DE TRATAMENTO DE DATAS INTERNAS DO EXCEL ---
+// --- MAPEADOR DAS 7 ZONAS ANATÔMICAS DO CAMINHÃO VW 8.120 PEPSICO ---
 // ============================================================================
-function formatarDataVersaoBancoNoTopo(raw, dataPadrao) {
+function identificarZonaDefeito3D(statusTexto) {
+  const s = String(statusTexto || '').toUpperCase();
+  if (
+    s.includes('MOTOR') ||
+    s.includes('CABEÇOTE') ||
+    s.includes('CABECOTE') ||
+    s.includes('RADIADOR') ||
+    s.includes('AQUECENDO') ||
+    s.includes('TURBINA') ||
+    s.includes('BOMBA')
+  ) {
+    return {
+      id: 'MOTOR',
+      nome: 'MOTOR, TURBINA & ARREFECIMENTO',
+      cor: '#ef4444',
+      corHex: 0xef4444,
+      simbolo: '⊗',
+      descricao:
+        'Bloco do motor diesel 8.120, cabeçote, turbocompressor, radiador e intercooler sob a cabine basculante.',
+      bascularCabine: true,
+      abrirBau: false,
+      raioXRecomendado: false,
+      cameraPreset: 'MOTOR',
+    };
+  }
+  if (
+    s.includes('CÂMBIO') ||
+    s.includes('CAMBIO') ||
+    s.includes('EMBREAGEM') ||
+    s.includes('TRANSMISSÃO') ||
+    s.includes('TRANSMISSAO')
+  ) {
+    return {
+      id: 'TRANSMISSAO',
+      nome: 'TRANSMISSÃO, CÂMBIO & EMBREAGEM',
+      cor: '#f97316',
+      corHex: 0xf97316,
+      simbolo: '⊗',
+      descricao:
+        'Caixa seletora de marchas, capa seca, platô/disco de embreagem e acoplamento do eixo cardan.',
+      bascularCabine: false,
+      abrirBau: false,
+      raioXRecomendado: true,
+      cameraPreset: 'CAMBIO',
+    };
+  }
+  if (
+    s.includes('IGNIÇÃO') ||
+    s.includes('IGNICAO') ||
+    s.includes('PAINEL') ||
+    s.includes('ELÉTRICA') ||
+    s.includes('ELETRICA') ||
+    s.includes('PARABRISA') ||
+    s.includes('TACÓGRAFO') ||
+    s.includes('TACOGRAFO') ||
+    s.includes('PARTIDA') ||
+    s.includes('ALTERNADOR') ||
+    s.includes('BATERIA')
+  ) {
+    return {
+      id: 'PARTIDA',
+      nome: 'PARTIDA, ELÉTRICA & CABINE',
+      cor: '#eab308',
+      corHex: 0xeab308,
+      simbolo: '!',
+      descricao:
+        'Sistema de ignição/partida, chicote elétrico, painel de instrumentos, tacógrafo e estrutura da cabine.',
+      bascularCabine: false,
+      abrirBau: false,
+      raioXRecomendado: false,
+      cameraPreset: 'FRENTE',
+    };
+  }
+  if (
+    s.includes('RODA') ||
+    s.includes('PNEU') ||
+    s.includes('BORRACHARIA') ||
+    s.includes('FREIO') ||
+    s.includes('CUBO')
+  ) {
+    return {
+      id: 'PNEU',
+      nome: 'PNEUS, CUBOS & RODAGEM',
+      cor: '#ec4899',
+      corHex: 0xec4899,
+      simbolo: '⊗',
+      descricao:
+        'Rodado traseiro duplo e dianteiro, retentores de roda, tambores de freio, cubos e pneus.',
+      bascularCabine: false,
+      abrirBau: false,
+      raioXRecomendado: true,
+      cameraPreset: 'PNEUS',
+    };
+  }
+  if (
+    s.includes('SUSPENSÃO') ||
+    s.includes('SUSPENSAO') ||
+    s.includes('MOLA') ||
+    s.includes('CATALISADOR') ||
+    s.includes('ESCAPAMENTO') ||
+    s.includes('CHASSI') ||
+    s.includes('CARDAN') ||
+    s.includes('DIFERENCIAL') ||
+    s.includes('ARLA')
+  ) {
+    return {
+      id: 'UNDERTRUCK',
+      nome: 'UNDERTRUCK (SUSPENSÃO / CARDAN / EXAUSTÃO)',
+      cor: '#a855f7',
+      corHex: 0xa855f7,
+      simbolo: '⊗',
+      descricao:
+        'Subestrutura Undertruck: feixes de mola parabólicos, amortecedores, cardan, diferencial, tanque e catalisador.',
+      bascularCabine: false,
+      abrirBau: false,
+      raioXRecomendado: true,
+      cameraPreset: 'CAMBIO',
+    };
+  }
+  if (
+    s.includes('BAU') ||
+    s.includes('BAÚ') ||
+    s.includes('AGUA') ||
+    s.includes('ÁGUA') ||
+    s.includes('LAVAGEM') ||
+    s.includes('PORTA')
+  ) {
+    return {
+      id: 'BAU',
+      nome: 'BAÚ DE CARGA & CARROCERIA PEPSICO',
+      cor: '#3b82f6',
+      corHex: 0x3b82f6,
+      simbolo: '⊗',
+      descricao:
+        'Carroceria de alumínio, portas traseiras e lateral de entrega, vedação contra infiltração e assoalho.',
+      bascularCabine: false,
+      abrirBau: true,
+      raioXRecomendado: false,
+      cameraPreset: 'TRASEIRA',
+    };
+  }
+  if (s.includes('SINISTRO')) {
+    return {
+      id: 'SINISTRO',
+      nome: 'SINISTRO / COLISÃO ESTRUTURAL',
+      cor: '#dc2626',
+      corHex: 0xdc2626,
+      simbolo: '⊗',
+      descricao:
+        'Avaria estrutural por colisão/acidente exigindo reparo de funilaria, alinhamento de chassi e cabine.',
+      bascularCabine: false,
+      abrirBau: false,
+      raioXRecomendado: false,
+      cameraPreset: 'FRENTE',
+    };
+  }
+  return {
+    id: 'PREVENTIVA',
+    nome: 'PREVENTIVA / DIAGNÓSTICO GERAL',
+    cor: '#06b6d4',
+    corHex: 0x06b6d4,
+    simbolo: '!',
+    descricao:
+      'Manutenção preventiva programada, check-up multiponto ou aguardando aprovação/liberação.',
+    bascularCabine: false,
+    abrirBau: false,
+    raioXRecomendado: false,
+    cameraPreset: 'ISO',
+  };
+}
+
+// ============================================================================
+// --- COMPONENTE 1: PLANTA TÉCNICA 2D COMPLEXA (VW 8.120 PEPSICO) ---
+// ============================================================================
+function PlantaTecnica2DCaminhao({ veiculo, zonaAtiva, filtroZona3D, setFiltroZona3D }) {
+  const estaDisponivel =
+    String(veiculo?.disponibilidade || '').toUpperCase().includes('DISPON') ||
+    String(veiculo?.status || '').toUpperCase() === 'PRONTO';
+
+  const obterStatusCaixa = (idCaixa) => {
+    if (!veiculo || estaDisponivel) {
+      return { tipo: 'OK', corBg: '#10b981' };
+    }
+    if (
+      zonaAtiva.id === idCaixa ||
+      (zonaAtiva.id === 'SINISTRO' && (idCaixa === 'PARTIDA' || idCaixa === 'BAU'))
+    ) {
+      return { tipo: 'CRITICO', corBg: '#ef4444' };
+    }
+    if (idCaixa === 'PREVENTIVA' && zonaAtiva.id !== 'PREVENTIVA') {
+      return { tipo: 'ATENCAO', corBg: '#f59e0b' };
+    }
+    return { tipo: 'OK', corBg: '#10b981' };
+  };
+
+  const caixasAnatomicas = [
+    { id: 'BAU', label: 'BAU', x: 90, y: 42 },
+    { id: 'PREVENTIVA', label: 'PREVENTIVA', x: 375, y: 78 },
+    { id: 'PARTIDA', label: 'PARTIDA', x: 585, y: 108 },
+    { id: 'TRANSMISSAO', label: 'TRANSMISSÃO', x: 472, y: 196 },
+    { id: 'MOTOR', label: 'MOTOR', x: 588, y: 196 },
+    { id: 'UNDERTRUCK', label: 'UNDERTRUCK', x: 325, y: 222 },
+    { id: 'PNEU', label: 'PNEU', x: 115, y: 222 },
+  ];
+
+  return (
+    <div className="w-full rounded-xl overflow-hidden border-2 border-gray-600 bg-[#f8fafc] text-gray-900 shadow-inner">
+      <div className="bg-[#d1d5db] border-b-2 border-gray-500 py-2 px-4 text-center">
+        <h4 className="text-lg font-black tracking-wide text-gray-950 uppercase">
+          PLACA : {veiculo?.placa || 'AGUARDANDO PLANILHA'} —{' '}
+          <span className="text-sm font-bold text-gray-700">
+            VW 8.120 PEPSICO ({veiculo?.status || 'CARREGUE O EXCEL DE DISPONIBILIDADE'})
+          </span>
+        </h4>
+      </div>
+
+      <div className="relative p-3 flex items-center justify-center bg-white">
+        <svg viewBox="0 0 720 320" className="w-full h-auto max-h-[340px] select-none">
+          <line x1="35" y1="265" x2="685" y2="265" stroke="#94a3b8" strokeWidth="2" />
+
+          {/* 1. BAÚ DE CARGA PEPSICO */}
+          <g
+            onClick={() => setFiltroZona3D(filtroZona3D === 'BAU' ? 'TODAS' : 'BAU')}
+            className="cursor-pointer"
+          >
+            <rect
+              x="42"
+              y="32"
+              width="465"
+              height="162"
+              fill={zonaAtiva.id === 'BAU' ? '#fee2e2' : '#ffffff'}
+              stroke={zonaAtiva.id === 'BAU' ? '#dc2626' : '#334155'}
+              strokeWidth={zonaAtiva.id === 'BAU' ? '3' : '2'}
+            />
+            <rect x="40" y="28" width="469" height="6" fill="#e2e8f0" stroke="#334155" strokeWidth="1.5" />
+            <rect x="40" y="190" width="469" height="7" fill="#cbd5e1" stroke="#334155" strokeWidth="1.5" />
+            <line x1="48" y1="34" x2="48" y2="190" stroke="#475569" strokeWidth="1.5" />
+            <line x1="501" y1="34" x2="501" y2="190" stroke="#475569" strokeWidth="1.5" />
+
+            {/* Porta Lateral Central */}
+            <rect x="262" y="56" width="76" height="130" fill="#f8fafc" stroke="#334155" strokeWidth="2" />
+            <rect x="265" y="59" width="70" height="124" fill="none" stroke="#94a3b8" strokeWidth="1" />
+            <rect x="326" y="70" width="12" height="5" fill="#cbd5e1" stroke="#334155" strokeWidth="1" />
+            <rect x="326" y="168" width="12" height="5" fill="#cbd5e1" stroke="#334155" strokeWidth="1" />
+            <rect x="272" y="172" width="22" height="9" fill="#cbd5e1" stroke="#334155" strokeWidth="1.2" />
+
+            {/* Globo e Logo PepsiCo */}
+            <g transform="translate(88, 108)">
+              <circle cx="16" cy="8" r="14" fill="none" stroke="#1e293b" strokeWidth="1.8" />
+              <ellipse cx="16" cy="8" rx="14" ry="5" fill="none" stroke="#1e293b" strokeWidth="1.2" />
+              <ellipse cx="16" cy="8" rx="6" ry="14" fill="none" stroke="#1e293b" strokeWidth="1.2" />
+              <line x1="2" y1="8" x2="30" y2="8" stroke="#1e293b" strokeWidth="1.2" />
+              <text
+                x="36"
+                y="22"
+                fill="#1e293b"
+                fontSize="21"
+                fontWeight="900"
+                fontFamily="sans-serif"
+                letterSpacing="1"
+              >
+                PEPSICO
+              </text>
+            </g>
+          </g>
+
+          {/* 2. CABINE VW 8.120 + QUEBRA-VENTO */}
+          <g
+            onClick={() => setFiltroZona3D(filtroZona3D === 'PARTIDA' ? 'TODAS' : 'PARTIDA')}
+            className="cursor-pointer"
+          >
+            <path
+              d="M 512,96 L 512,42 Q 555,52 594,96 Z"
+              fill="#f1f5f9"
+              stroke="#334155"
+              strokeWidth="2"
+            />
+            <path d="M 515,78 Q 552,82 586,96" fill="none" stroke="#64748b" strokeWidth="1.2" />
+
+            <path
+              d="M 512,96 L 605,96 L 642,148 L 648,205 L 512,205 Z"
+              fill={
+                zonaAtiva.id === 'PARTIDA' || zonaAtiva.id === 'SINISTRO'
+                  ? '#fef3c7'
+                  : '#ffffff'
+              }
+              stroke={
+                zonaAtiva.id === 'PARTIDA' || zonaAtiva.id === 'SINISTRO'
+                  ? '#d97706'
+                  : '#334155'
+              }
+              strokeWidth="2.2"
+            />
+            <path
+              d="M 526,104 L 592,104 L 612,145 L 612,196 L 526,196 Z"
+              fill="none"
+              stroke="#475569"
+              strokeWidth="1.5"
+            />
+            <polygon
+              points="532,108 588,108 604,142 532,142"
+              fill="#e2e8f0"
+              stroke="#334155"
+              strokeWidth="1.5"
+            />
+            <rect x="586" y="110" width="8" height="26" rx="2" fill="#94a3b8" stroke="#1e293b" strokeWidth="1.5" />
+            <rect x="535" y="156" width="14" height="5" rx="1" fill="#475569" />
+            <text x="580" y="154" fill="#334155" fontSize="8" fontWeight="bold">
+              8.120
+            </text>
+            <line x1="605" y1="96" x2="640" y2="145" stroke="#1e293b" strokeWidth="3" />
+            <rect x="634" y="182" width="18" height="26" rx="3" fill="#cbd5e1" stroke="#1e293b" strokeWidth="1.8" />
+            <rect x="636" y="164" width="10" height="15" fill="#fef08a" stroke="#334155" strokeWidth="1.2" />
+          </g>
+
+          {/* 3. UNDERTRUCK & CHASSI */}
+          <g
+            onClick={() =>
+              setFiltroZona3D(filtroZona3D === 'UNDERTRUCK' ? 'TODAS' : 'UNDERTRUCK')
+            }
+            className="cursor-pointer"
+          >
+            <rect x="42" y="197" width="470" height="12" fill="#94a3b8" stroke="#334155" strokeWidth="1.5" />
+            <rect x="85" y="213" width="115" height="5" fill="#e2e8f0" stroke="#475569" strokeWidth="1.2" />
+            <rect x="85" y="223" width="115" height="5" fill="#e2e8f0" stroke="#475569" strokeWidth="1.2" />
+            <rect x="305" y="213" width="175" height="5" fill="#e2e8f0" stroke="#475569" strokeWidth="1.2" />
+            <rect x="305" y="223" width="175" height="5" fill="#e2e8f0" stroke="#475569" strokeWidth="1.2" />
+            <rect x="42" y="197" width="8" height="36" fill="#cbd5e1" stroke="#334155" strokeWidth="1.5" />
+          </g>
+
+          {/* 4. RODAS E PNEUS */}
+          <g
+            onClick={() => setFiltroZona3D(filtroZona3D === 'PNEU' ? 'TODAS' : 'PNEU')}
+            className="cursor-pointer"
+          >
+            <path d="M 206,235 A 42,42 0 0,1 290,235" fill="none" stroke="#334155" strokeWidth="4" />
+            <circle
+              cx="248"
+              cy="232"
+              r="33"
+              fill="#e2e8f0"
+              stroke={zonaAtiva.id === 'PNEU' ? '#dc2626' : '#1e293b'}
+              strokeWidth="5"
+            />
+            <circle cx="248" cy="232" r="19" fill="#ffffff" stroke="#334155" strokeWidth="2" />
+            <circle cx="248" cy="232" r="7" fill="#475569" />
+
+            <path d="M 538,225 A 42,42 0 0,1 622,225" fill="none" stroke="#334155" strokeWidth="3.5" />
+            <circle
+              cx="580"
+              cy="232"
+              r="33"
+              fill="#e2e8f0"
+              stroke={zonaAtiva.id === 'PNEU' ? '#dc2626' : '#1e293b'}
+              strokeWidth="5"
+            />
+            <circle cx="580" cy="232" r="19" fill="#ffffff" stroke="#334155" strokeWidth="2" />
+            <circle cx="580" cy="232" r="7" fill="#475569" />
+          </g>
+
+          {/* 5. AS 7 CAIXAS DE DIAGNÓSTICO ANATÔMICO */}
+          {caixasAnatomicas.map((cx) => {
+            const st = obterStatusCaixa(cx.id);
+            const ativa = zonaAtiva.id === cx.id || filtroZona3D === cx.id;
+
+            return (
+              <g
+                key={cx.id}
+                transform={`translate(${cx.x}, ${cx.y})`}
+                onClick={() =>
+                  setFiltroZona3D(filtroZona3D === cx.id ? 'TODAS' : cx.id)
+                }
+                className="cursor-pointer hover:opacity-90"
+              >
+                <rect
+                  x="0"
+                  y="0"
+                  width="112"
+                  height="30"
+                  rx="3"
+                  fill={ativa ? '#1e293b' : '#cbd5e1'}
+                  stroke={ativa ? st.corBg : '#475569'}
+                  strokeWidth={ativa ? '2.5' : '1.5'}
+                />
+                <circle cx="16" cy="15" r="9" fill={st.corBg} stroke="#ffffff" strokeWidth="1.5" />
+                <text
+                  x="16"
+                  y="19"
+                  textAnchor="middle"
+                  fill="#ffffff"
+                  fontSize="11"
+                  fontWeight="900"
+                >
+                  {st.tipo === 'OK' ? '✓' : st.tipo === 'ATENCAO' ? '!' : '✕'}
+                </text>
+                <text
+                  x="64"
+                  y="19"
+                  textAnchor="middle"
+                  fill={ativa ? '#ffffff' : '#0f172a'}
+                  fontSize="10"
+                  fontWeight="900"
+                >
+                  {cx.label}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* 6. STATUS GERAL DO VEÍCULO */}
+          <g transform="translate(265, 275)">
+            <rect
+              x="0"
+              y="0"
+              width="195"
+              height="34"
+              rx="4"
+              fill="#cbd5e1"
+              stroke="#475569"
+              strokeWidth="1.8"
+            />
+            <circle
+              cx="20"
+              cy="17"
+              r="10"
+              fill={estaDisponivel ? '#10b981' : '#f59e0b'}
+              stroke="#ffffff"
+              strokeWidth="1.5"
+            />
+            <text x="20" y="21" textAnchor="middle" fill="#ffffff" fontSize="12" fontWeight="900">
+              {estaDisponivel ? '✓' : '!'}
+            </text>
+            <text x="110" y="21" textAnchor="middle" fill="#0f172a" fontSize="11" fontWeight="900">
+              STATUS: {estaDisponivel ? 'OPERACIONAL' : 'EM OFICINA'}
+            </text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// --- COMPONENTE 2: VITRINE 3D REALISTA ESCULPIDA (MALHA CHANFRADA + NEON) ---
+// ============================================================================
+function VitrineCaminhao3D({ veiculo, zonaAtiva, filtroZona3D, setFiltroZona3D }) {
+  const mountRef = useRef(null);
+  const [modoVisualizacao, setModoVisualizacao] = useState('3D'); // '3D' | '2D'
+  const stateRef = useRef({
+    autoGirar: false,
+    raioX: false,
+    mostrarRotulos: true,
+    cabineBasculada: false,
+    portasBauAbertas: false,
+    zonaDestacada: 'PREVENTIVA',
+    corHexDestacada: 0x06b6d4,
+    theta: -0.68,
+    phi: 1.15,
+    radius: 11.2,
+    targetTheta: -0.68,
+    targetPhi: 1.15,
+    targetRadius: 11.2,
+    lookAtTarget: { x: 0, y: 1.25, z: 0 },
+    currentLookAt: { x: 0, y: 1.25, z: 0 },
+  });
+
+  const [autoGirarUI, setAutoGirarUI] = useState(false);
+  const [raioXUI, setRaioXUI] = useState(false);
+  const [rotulosUI, setRotulosUI] = useState(true);
+  const [cabineUI, setCabineUI] = useState(false);
+  const [bauAbertoUI, setBauAbertoUI] = useState(false);
+  const [cameraAtivaUI, setCameraAtivaUI] = useState('ISO');
+  const [threeCarregado, setThreeCarregado] = useState(!!window.THREE);
+
+  useEffect(() => {
+    if (!zonaAtiva) return;
+    stateRef.current.zonaDestacada = zonaAtiva.id;
+    stateRef.current.corHexDestacada = zonaAtiva.corHex || 0xef4444;
+
+    const deveBascular = !!zonaAtiva.bascularCabine;
+    stateRef.current.cabineBasculada = deveBascular;
+    setCabineUI(deveBascular);
+
+    const deveAbrirBau = !!zonaAtiva.abrirBau;
+    stateRef.current.portasBauAbertas = deveAbrirBau;
+    setBauAbertoUI(deveAbrirBau);
+
+    const deveRaioX = !!zonaAtiva.raioXRecomendado;
+    stateRef.current.raioX = deveRaioX;
+    setRaioXUI(deveRaioX);
+
+    moverCameraParaPreset(zonaAtiva.cameraPreset || 'ISO', deveBascular, deveRaioX);
+  }, [veiculo, zonaAtiva?.id]);
+
+  const moverCameraParaPreset = (preset, forcarCabine, forcarRaioX) => {
+    setCameraAtivaUI(preset);
+    const s = stateRef.current;
+
+    if (preset === 'MOTOR') {
+      s.cabineBasculada = true;
+      setCabineUI(true);
+      s.targetTheta = -0.82;
+      s.targetPhi = 1.15;
+      s.targetRadius = 7.6;
+      s.lookAtTarget = { x: -2.4, y: 1.15, z: 0 };
+    } else if (preset === 'CAMBIO') {
+      s.raioX = true;
+      setRaioXUI(true);
+      s.targetTheta = -1.05;
+      s.targetPhi = 1.22;
+      s.targetRadius = 8.0;
+      s.lookAtTarget = { x: -0.3, y: 0.9, z: 0 };
+    } else if (preset === 'PNEUS') {
+      s.raioX = true;
+      setRaioXUI(true);
+      s.targetTheta = -2.05;
+      s.targetPhi = 1.3;
+      s.targetRadius = 8.2;
+      s.lookAtTarget = { x: 1.9, y: 0.75, z: 0 };
+    } else if (preset === 'FRENTE') {
+      s.targetTheta = -0.25;
+      s.targetPhi = 1.22;
+      s.targetRadius = 9.0;
+      s.lookAtTarget = { x: -2.3, y: 1.45, z: 0 };
+    } else if (preset === 'TRASEIRA') {
+      s.targetTheta = Math.PI - 0.35;
+      s.targetPhi = 1.18;
+      s.targetRadius = 10.2;
+      s.lookAtTarget = { x: 1.8, y: 1.65, z: 0 };
+    } else if (preset === 'ESQ') {
+      s.targetTheta = -Math.PI / 2;
+      s.targetPhi = 1.32;
+      s.targetRadius = 11.2;
+      s.lookAtTarget = { x: 0, y: 1.3, z: 0 };
+    } else if (preset === 'DIR') {
+      s.targetTheta = Math.PI / 2;
+      s.targetPhi = 1.32;
+      s.targetRadius = 11.2;
+      s.lookAtTarget = { x: 0, y: 1.3, z: 0 };
+    } else if (preset === 'TOPO') {
+      s.targetTheta = -Math.PI / 2;
+      s.targetPhi = 0.16;
+      s.targetRadius = 13.0;
+      s.lookAtTarget = { x: 0, y: 1.0, z: 0 };
+    } else {
+      if (forcarCabine === undefined) {
+        s.cabineBasculada = false;
+        setCabineUI(false);
+      }
+      if (forcarRaioX === undefined) {
+        s.raioX = false;
+        setRaioXUI(false);
+      }
+      s.targetTheta = -0.68;
+      s.targetPhi = 1.15;
+      s.targetRadius = 11.2;
+      s.lookAtTarget = { x: 0, y: 1.3, z: 0 };
+    }
+  };
+
+  useEffect(() => {
+    if (window.THREE) {
+      setThreeCarregado(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    script.async = true;
+    script.onload = () => setThreeCarregado(true);
+    document.body.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    if (modoVisualizacao !== '3D' || !threeCarregado || !mountRef.current || !window.THREE) return;
+    const THREE = window.THREE;
+    const container = mountRef.current;
+    const width = container.clientWidth || 720;
+    const height = container.clientHeight || 360;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+
+    // --- ILUMINAÇÃO DE ESTÚDIO AUTOMOTIVO 3 PONTOS ---
+    scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.05);
+    sunLight.position.set(12, 18, 14);
+    scene.add(sunLight);
+
+    const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.5);
+    fillLight.position.set(-14, 10, -12);
+    scene.add(fillLight);
+
+    const underLight = new THREE.DirectionalLight(0xfbbf24, 0.35);
+    underLight.position.set(0, -6, 6);
+    scene.add(underLight);
+
+    // Piso Técnico de Engenharia
+    const gridHelper = new THREE.GridHelper(20, 28, 0x0284c7, 0x1e293b);
+    gridHelper.position.y = 0.01;
+    scene.add(gridHelper);
+
+    const truckGroup = new THREE.Group();
+    scene.add(truckGroup);
+
+    const materiaisExternos = [];
+    const todosMeshesClicaveis = [];
+    const meshesPorZona = {
+      MOTOR: [],
+      TRANSMISSAO: [],
+      PARTIDA: [],
+      UNDERTRUCK: [],
+      PNEU: [],
+      BAU: [],
+      PREVENTIVA: [],
+      SINISTRO: [],
+    };
+
+    // Clona material individual para permitir que cada peça brilhe em Neon quando selecionada
+    const registrarPeca = (mesh, zonaId) => {
+      mesh.material = mesh.material.clone();
+      mesh.userData = {
+        zonaId,
+        baseColor: mesh.material.color ? mesh.material.color.getHex() : 0xffffff,
+      };
+      if (meshesPorZona[zonaId]) {
+        meshesPorZona[zonaId].push(mesh);
+      }
+      todosMeshesClicaveis.push(mesh);
+    };
+
+    // ========================================================================
+    // 1. CHASSI ESCALONADO E SUBESTRUTURA UNDERTRUCK
+    // ========================================================================
+    const matChassi = new THREE.MeshStandardMaterial({
+      color: 0x64748b,
+      roughness: 0.45,
+      metalness: 0.65,
+    });
+
+    [-0.52, 0.52].forEach((zPos) => {
+      const longarina = new THREE.Mesh(new THREE.BoxGeometry(7.35, 0.22, 0.12), matChassi);
+      longarina.position.set(0.18, 0.86, zPos);
+      registrarPeca(longarina, 'UNDERTRUCK');
+      truckGroup.add(longarina);
+    });
+
+    for (let x = -2.9; x <= 3.5; x += 1.05) {
+      const travessa = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 1.12), matChassi);
+      travessa.position.set(x, 0.86, 0);
+      registrarPeca(travessa, 'UNDERTRUCK');
+      truckGroup.add(travessa);
+    }
+
+    // Tanque Cilíndrico de Diesel + Cintas Metálicas + Tanque Azul de Arla 32
+    const matTanqueInox = new THREE.MeshStandardMaterial({
+      color: 0x94a3b8,
+      roughness: 0.25,
+      metalness: 0.85,
+    });
+    const tanqueDiesel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.28, 1.25, 24),
+      matTanqueInox
+    );
+    tanqueDiesel.rotation.z = Math.PI / 2;
+    tanqueDiesel.position.set(-0.25, 0.78, 0.88);
+    registrarPeca(tanqueDiesel, 'UNDERTRUCK');
+    truckGroup.add(tanqueDiesel);
+
+    const matArlaAzul = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      roughness: 0.4,
+      metalness: 0.2,
+    });
+    const tanqueArla = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.42, 0.38), matArlaAzul);
+    tanqueArla.position.set(-1.1, 0.8, 0.88);
+    registrarPeca(tanqueArla, 'UNDERTRUCK');
+    truckGroup.add(tanqueArla);
+
+    // Catalisador & Sistema de Exaustão DPF
+    const catalisador = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.34, 0.38), matTanqueInox);
+    catalisador.position.set(-0.35, 0.8, -0.88);
+    registrarPeca(catalisador, 'UNDERTRUCK');
+    truckGroup.add(catalisador);
+
+    const ponteiraEscape = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.055, 0.055, 1.85, 14),
+      matTanqueInox
+    );
+    ponteiraEscape.rotation.z = Math.PI / 2;
+    ponteiraEscape.position.set(0.75, 0.72, -0.82);
+    registrarPeca(ponteiraEscape, 'UNDERTRUCK');
+    truckGroup.add(ponteiraEscape);
+
+    // ========================================================================
+    // 2. MOTOR CUMMINS / MWM 4 CILINDROS + TURBINA + RADIADOR COM HÉLICE VIVA
+    // ========================================================================
+    const matBlocoMotor = new THREE.MeshStandardMaterial({
+      color: 0xdc2626,
+      roughness: 0.35,
+      metalness: 0.4,
+    });
+    const matAluminio = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      roughness: 0.3,
+      metalness: 0.8,
+    });
+    const matPretoFosco = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.6,
+      metalness: 0.4,
+    });
+
+    const motorGroup = new THREE.Group();
+    motorGroup.position.set(-2.38, 1.12, 0);
+    truckGroup.add(motorGroup);
+
+    // Bloco Principal e Cárter Inferior
+    const bloco = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.68, 0.68), matBlocoMotor);
+    registrarPeca(bloco, 'MOTOR');
+    motorGroup.add(bloco);
+
+    const carter = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.25, 0.52), matPretoFosco);
+    carter.position.set(0, -0.42, 0);
+    registrarPeca(carter, 'MOTOR');
+    motorGroup.add(carter);
+
+    // Cabeçote Valvulado + 4 Tampas de Válvula Individuais
+    const cabecote = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.22, 0.62), matAluminio);
+    cabecote.position.set(0, 0.44, 0);
+    registrarPeca(cabecote, 'MOTOR');
+    motorGroup.add(cabecote);
+
+    for (let i = -0.36; i <= 0.36; i += 0.24) {
+      const tampaValvula = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.12, 0.48),
+        matBlocoMotor
+      );
+      tampaValvula.position.set(i, 0.58, 0);
+      registrarPeca(tampaValvula, 'MOTOR');
+      motorGroup.add(tampaValvula);
+    }
+
+    // Turbocompressor Lateral (Caracol) + Tubo Intercooler
+    const turbina = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.06, 12, 24), matAluminio);
+    turbina.position.set(0.1, 0.25, -0.42);
+    registrarPeca(turbina, 'MOTOR');
+    motorGroup.add(turbina);
+
+    // Radiador Colmeia + Intercooler + Ventoinha Giratória
+    const radiador = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.88, 0.98), matPretoFosco);
+    radiador.position.set(-0.78, 0.12, 0);
+    registrarPeca(radiador, 'MOTOR');
+    motorGroup.add(radiador);
+
+    const intercooler = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.65, 0.82), matAluminio);
+    intercooler.position.set(-0.88, 0.12, 0);
+    registrarPeca(intercooler, 'MOTOR');
+    motorGroup.add(intercooler);
+
+    const heliceGroup = new THREE.Group();
+    heliceGroup.position.set(-0.66, 0.12, 0);
+    motorGroup.add(heliceGroup);
+    for (let a = 0; a < 6; a++) {
+      const pa = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.34, 0.08), matBlocoMotor);
+      pa.rotation.x = (a * Math.PI) / 3;
+      registrarPeca(pa, 'MOTOR');
+      heliceGroup.add(pa);
+    }
+
+    // ========================================================================
+    // 3. TRANSMISSÃO: CAPA SECA DE EMBREAGEM + CAIXA ZF + CARDAN GIRATÓRIO
+    // ========================================================================
+    const matTransmissao = new THREE.MeshStandardMaterial({
+      color: 0xcbd5e1,
+      roughness: 0.28,
+      metalness: 0.82,
+    });
+
+    // Capa Seca Cônica da Embreagem (entre o motor e o câmbio)
+    const capaSeca = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.36, 0.38, 24),
+      matTransmissao
+    );
+    capaSeca.rotation.z = Math.PI / 2;
+    capaSeca.position.set(-1.62, 0.98, 0);
+    registrarPeca(capaSeca, 'TRANSMISSAO');
+    truckGroup.add(capaSeca);
+
+    // Corpo da Caixa de Câmbio com Trambulador Superior
+    const corpoCambio = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.26, 0.24, 0.78, 20),
+      matTransmissao
+    );
+    corpoCambio.rotation.z = Math.PI / 2;
+    corpoCambio.position.set(-1.1, 0.96, 0);
+    registrarPeca(corpoCambio, 'TRANSMISSAO');
+    truckGroup.add(corpoCambio);
+
+    const trambulador = new THREE.Mesh(
+      new THREE.BoxGeometry(0.45, 0.22, 0.32),
+      matTransmissao
+    );
+    trambulador.position.set(-1.1, 1.18, 0);
+    registrarPeca(trambulador, 'TRANSMISSAO');
+    truckGroup.add(trambulador);
+
+    // Eixo Cardan Articulado (gira em tempo real!)
+    const cardanMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.075, 0.075, 2.75, 16),
+      matTransmissao
+    );
+    cardanMesh.position.set(0.65, 0.78, 0);
+    cardanMesh.rotation.z = Math.PI / 2 - 0.06;
+    registrarPeca(cardanMesh, 'TRANSMISSAO');
+    truckGroup.add(cardanMesh);
+
+    // ========================================================================
+    // 4. RODAS DETALHADAS (COM PARAFUSOS CROMADOS), EIXOS E FEIXE DE MOLAS
+    // ========================================================================
+    const matBorrachaPneu = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.88,
+      metalness: 0.1,
+    });
+
+    const criarRodaRealista = (x, y, z, dupla = false) => {
+      const rGroup = new THREE.Group();
+      rGroup.position.set(x, y, z);
+
+      const largura = dupla ? 0.62 : 0.34;
+      const pneu = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.58, 0.58, largura, 32),
+        matBorrachaPneu
+      );
+      pneu.rotation.x = Math.PI / 2;
+      registrarPeca(pneu, 'PNEU');
+      rGroup.add(pneu);
+
+      // Ombro arredondado lateral do pneu (Torus)
+      const ombro = new THREE.Mesh(
+        new THREE.TorusGeometry(0.46, 0.11, 14, 32),
+        matBorrachaPneu
+      );
+      ombro.position.z = z > 0 ? largura / 2 - 0.04 : -largura / 2 + 0.04;
+      registrarPeca(ombro, 'PNEU');
+      rGroup.add(ombro);
+
+      // Aro de Aço Prata + Cubo Redutor + 8 Parafusos Cromados
+      const aro = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.35, largura + 0.02, 24),
+        matAluminio
+      );
+      aro.rotation.x = Math.PI / 2;
+      registrarPeca(aro, 'PNEU');
+      rGroup.add(aro);
+
+      const cubo = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.15, largura + 0.07, 16),
+        matPretoFosco
+      );
+      cubo.rotation.x = Math.PI / 2;
+      registrarPeca(cubo, 'PNEU');
+      rGroup.add(cubo);
+
+      const faceZ = z > 0 ? largura / 2 + 0.02 : -(largura / 2 + 0.02);
+      for (let b = 0; b < 8; b++) {
+        const ang = (b * Math.PI) / 4;
+        const parafuso = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.022, 0.022, 0.04, 8),
+          matAluminio
+        );
+        parafuso.rotation.x = Math.PI / 2;
+        parafuso.position.set(Math.cos(ang) * 0.24, Math.sin(ang) * 0.24, faceZ);
+        rGroup.add(parafuso);
+      }
+
+      truckGroup.add(rGroup);
+    };
+
+    criarRodaRealista(-2.38, 0.58, 1.04, false);
+    criarRodaRealista(-2.38, 0.58, -1.04, false);
+    criarRodaRealista(2.05, 0.58, 0.98, true);
+    criarRodaRealista(2.05, 0.58, -0.98, true);
+
+    // Estepe sob o chassi
+    const estepe = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.52, 0.52, 0.28, 24),
+      matBorrachaPneu
+    );
+    estepe.position.set(0.95, 0.58, 0.68);
+    registrarPeca(estepe, 'PNEU');
+    truckGroup.add(estepe);
+
+    // Eixo Diferencial Traseiro + Feixe de Molas Parabólicas + Amortecedores
+    const eixoTraseiro = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.11, 2.05, 16),
+      matChassi
+    );
+    eixoTraseiro.rotation.x = Math.PI / 2;
+    eixoTraseiro.position.set(2.05, 0.58, 0);
+    registrarPeca(eixoTraseiro, 'UNDERTRUCK');
+    truckGroup.add(eixoTraseiro);
+
+    const diferencial = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 20), matChassi);
+    diferencial.position.set(2.05, 0.58, 0);
+    registrarPeca(diferencial, 'UNDERTRUCK');
+    truckGroup.add(diferencial);
+
+    [-0.58, 0.58].forEach((zPos) => {
+      // Feixe de 3 lâminas escalonadas
+      [0, 0.05, 0.1].forEach((offsetY, idx) => {
+        const lamina = new THREE.Mesh(
+          new THREE.BoxGeometry(1.45 - idx * 0.3, 0.045, 0.14),
+          matChassi
+        );
+        lamina.position.set(2.05, 0.72 + offsetY, zPos);
+        registrarPeca(lamina, 'UNDERTRUCK');
+        truckGroup.add(lamina);
+      });
+      // Amortecedor inclinado
+      const amortecedor = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.55, 10),
+        matBlocoMotor
+      );
+      amortecedor.position.set(1.75, 0.78, zPos * 1.15);
+      amortecedor.rotation.z = 0.35;
+      registrarPeca(amortecedor, 'UNDERTRUCK');
+      truckGroup.add(amortecedor);
+    });
+
+    // ========================================================================
+    // 5. CABINE ESCULPIDA EM MALHA CHANFRADA (EXTRUDE GEOMETRY VW DELIVERY / 8.120)
+    // ========================================================================
+    const cabinePivot = new THREE.Group();
+    cabinePivot.position.set(-3.35, 0.92, 0);
+    truckGroup.add(cabinePivot);
+
+    const matPinturaCabine = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.18,
+      metalness: 0.15,
+      transparent: true,
+      opacity: 1.0,
+    });
+    const matVidroFume = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.08,
+      metalness: 0.92,
+      transparent: true,
+      opacity: 0.86,
+    });
+
+    // Perfil lateral anatômico real da cabine VW (frente chanfrada e teto curvo)
+    const cabShape = new THREE.Shape();
+    cabShape.moveTo(0, 0);
+    cabShape.lineTo(1.72, 0);
+    cabShape.lineTo(1.72, 1.78);
+    cabShape.lineTo(0.48, 1.78);
+    cabShape.quadraticCurveTo(0.28, 1.78, 0.18, 1.55);
+    cabShape.lineTo(0.0, 0.78);
+    cabShape.lineTo(0, 0);
+
+    const cabExtrudeGeo = new THREE.ExtrudeGeometry(cabShape, {
+      depth: 2.02,
+      bevelEnabled: true,
+      bevelSegments: 4,
+      steps: 1,
+      bevelSize: 0.07,
+      bevelThickness: 0.07,
+    });
+    cabExtrudeGeo.translate(0, 0, -1.01);
+
+    const malhaCabine = new THREE.Mesh(cabExtrudeGeo, matPinturaCabine);
+    registrarPeca(malhaCabine, 'PARTIDA');
+    materiaisExternos.push(malhaCabine.material);
+    cabinePivot.add(malhaCabine);
+
+    // Quebra-Vento Aerodinâmico Esculpido no Teto da Cabine
+    const aeroShape = new THREE.Shape();
+    aeroShape.moveTo(0.45, 1.82);
+    aeroShape.lineTo(1.74, 1.82);
+    aeroShape.lineTo(1.74, 2.46);
+    aeroShape.quadraticCurveTo(1.05, 2.38, 0.45, 1.82);
+
+    const aeroGeo = new THREE.ExtrudeGeometry(aeroShape, {
+      depth: 1.92,
+      bevelEnabled: true,
+      bevelSegments: 3,
+      steps: 1,
+      bevelSize: 0.04,
+      bevelThickness: 0.04,
+    });
+    aeroGeo.translate(0, 0, -0.96);
+
+    const malhaQuebraVento = new THREE.Mesh(aeroGeo, matPinturaCabine);
+    registrarPeca(malhaQuebraVento, 'PARTIDA');
+    materiaisExternos.push(malhaQuebraVento.material);
+    cabinePivot.add(malhaQuebraVento);
+
+    // Para-brisa Curvo Panorâmico + Janelas Laterais Chanfradas
+    const parabrisa = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.82, 1.88), matVidroFume);
+    parabrisa.position.set(0.08, 1.22, 0);
+    parabrisa.rotation.z = -0.22;
+    registrarPeca(parabrisa, 'PARTIDA');
+    materiaisExternos.push(parabrisa.material);
+    cabinePivot.add(parabrisa);
+
+    const janelasLaterais = new THREE.Mesh(
+      new THREE.BoxGeometry(1.08, 0.68, 2.18),
+      matVidroFume
+    );
+    janelasLaterais.position.set(0.88, 1.24, 0);
+    materiaisExternos.push(janelasLaterais.material);
+    cabinePivot.add(janelasLaterais);
+
+    // Interior da Cabine (Bancos Duplos + Painel Digital + Volante Inclinado)
+    const matInterior = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
+    const painel = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.36, 1.88), matInterior);
+    painel.position.set(0.38, 0.78, 0);
+    registrarPeca(painel, 'PARTIDA');
+    cabinePivot.add(painel);
+
+    const volante = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.025, 10, 24), matPretoFosco);
+    volante.position.set(0.55, 1.02, 0.52);
+    volante.rotation.y = Math.PI / 2;
+    volante.rotation.x = 0.45;
+    cabinePivot.add(volante);
+
+    [-0.52, 0.52].forEach((zSeat) => {
+      const banco = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.68, 0.52), matInterior);
+      banco.position.set(1.05, 0.62, zSeat);
+      cabinePivot.add(banco);
+    });
+
+    // Grade Frontal VW com Frisos Cromados + Emblema Redondo Central + Faróis Duplos
+    const gradeFrontal = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.52, 1.65),
+      matPretoFosco
+    );
+    gradeFrontal.position.set(-0.04, 0.44, 0);
+    registrarPeca(gradeFrontal, 'PARTIDA');
+    cabinePivot.add(gradeFrontal);
+
+    const emblemaVW = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.13, 0.06, 24),
+      matAluminio
+    );
+    emblemaVW.rotation.z = Math.PI / 2;
+    emblemaVW.position.set(-0.07, 0.48, 0);
+    cabinePivot.add(emblemaVW);
+
+    const matFarolLed = new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      emissive: 0xfacc15,
+      emissiveIntensity: 0.75,
+    });
+    [-0.84, 0.84].forEach((zPos) => {
+      const blocoFarol = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.24, 0.34),
+        matFarolLed
+      );
+      blocoFarol.position.set(-0.04, 0.28, zPos);
+      registrarPeca(blocoFarol, 'PARTIDA');
+      cabinePivot.add(blocoFarol);
+    });
+
+    // Para-lamas Redondos Arqueados + Degrau de Estribo + Retrovisores com Haste Tubular
+    [-1.08, 1.08].forEach((zPos) => {
+      const paralama = new THREE.Mesh(
+        new THREE.TorusGeometry(0.62, 0.09, 12, 24, Math.PI),
+        matPretoFosco
+      );
+      paralama.position.set(0.97, -0.22, zPos);
+      cabinePivot.add(paralama);
+
+      // Retrovisor Principal + Auxiliar Convexo + Braço Metálico
+      const espelhoGrande = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.46, 0.16),
+        matPretoFosco
+      );
+      espelhoGrande.position.set(0.28, 1.28, zPos * 1.15);
+      cabinePivot.add(espelhoGrande);
+
+      const hasteEspelho = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.018, 0.018, 0.25, 8),
+        matPretoFosco
+      );
+      hasteEspelho.rotation.x = Math.PI / 2;
+      hasteEspelho.position.set(0.28, 1.46, zPos * 1.05);
+      cabinePivot.add(hasteEspelho);
+    });
+
+    // Para-choque Dianteiro Envolvente (associado à zona SINISTRO / PARTIDA)
+    const parachoqueFrontal = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.36, 2.26),
+      matPinturaCabine
+    );
+    parachoqueFrontal.position.set(-3.45, 0.74, 0);
+    registrarPeca(parachoqueFrontal, 'SINISTRO');
+    truckGroup.add(parachoqueFrontal);
+
+    // ========================================================================
+    // 6. BAÚ DE CARGA PEPSICO + PORTAS TRASEIRAS ARTICULADAS QUE ABREM EM 3D!
+    // ========================================================================
+    const criarTexturaBauAltaDefinicao = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, 1024, 512);
+
+      // Frisos horizontais de alumínio
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 3;
+      for (let y = 36; y < 512; y += 38) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(1024, y);
+        ctx.stroke();
+      }
+
+      // Cantoneiras estruturais e rebites
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 18;
+      ctx.strokeRect(9, 9, 1006, 494);
+
+      // Porta Lateral de Entrega com Dobradiças e Fecho
+      ctx.fillStyle = '#f1f5f9';
+      ctx.fillRect(465, 80, 165, 402);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(465, 80, 165, 402);
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(612, 120, 26, 14);
+      ctx.fillRect(612, 420, 26, 14);
+      ctx.fillRect(488, 445, 44, 18);
+
+      // Globo PepsiCo + Tipografia Oficial
+      ctx.save();
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(135, 240, 40, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(135, 240, 40, 16, -0.2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(135, 240, 16, 40, -0.2, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '900 56px sans-serif';
+      ctx.fillText('PEPSICO', 192, 275);
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillStyle = '#0284c7';
+      ctx.fillText('LOGÍSTICA SUL2 • VW 8.120', 195, 312);
+      ctx.restore();
+
+      return new THREE.CanvasTexture(canvas);
+    };
+
+    const texLateralBau = criarTexturaBauAltaDefinicao();
+    const matBauLateral = new THREE.MeshStandardMaterial({
+      map: texLateralBau,
+      roughness: 0.28,
+      metalness: 0.12,
+      transparent: true,
+      opacity: 1.0,
+    });
+    const matBauTeto = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9,
+      roughness: 0.35,
+      metalness: 0.18,
+      transparent: true,
+      opacity: 1.0,
+    });
+
+    const bauCarga = new THREE.Mesh(new THREE.BoxGeometry(5.05, 2.55, 2.32), [
+      matBauTeto,
+      matBauTeto,
+      matBauTeto,
+      matBauTeto,
+      matBauLateral,
+      matBauLateral,
+    ]);
+    bauCarga.position.set(1.15, 2.28, 0);
+    // Clona e registra todos os materiais do baú para Raio-X e Neon
+    bauCarga.material = bauCarga.material.map((m) => {
+      const c = m.clone();
+      materiaisExternos.push(c);
+      return c;
+    });
+    todosMeshesClicaveis.push(bauCarga);
+    bauCarga.userData = { zonaId: 'BAU', baseColor: 0xf8fafc };
+    meshesPorZona.BAU.push(bauCarga);
+    truckGroup.add(bauCarga);
+
+    // Portas Traseiras Duplas Articuladas (Abrem quando seleciona BAÚ!)
+    const portaTraseiraEsqPivot = new THREE.Group();
+    portaTraseiraEsqPivot.position.set(3.68, 2.28, 1.14);
+    truckGroup.add(portaTraseiraEsqPivot);
+
+    const folhaPortaEsq = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 2.42, 1.12),
+      matBauTeto
+    );
+    folhaPortaEsq.position.set(0, 0, -0.56);
+    registrarPeca(folhaPortaEsq, 'BAU');
+    materiaisExternos.push(folhaPortaEsq.material);
+    portaTraseiraEsqPivot.add(folhaPortaEsq);
+
+    const portaTraseiraDirPivot = new THREE.Group();
+    portaTraseiraDirPivot.position.set(3.68, 2.28, -1.14);
+    truckGroup.add(portaTraseiraDirPivot);
+
+    const folhaPortaDir = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 2.42, 1.12),
+      matBauTeto
+    );
+    folhaPortaDir.position.set(0, 0, 0.56);
+    registrarPeca(folhaPortaDir, 'BAU');
+    materiaisExternos.push(folhaPortaDir.material);
+    portaTraseiraDirPivot.add(folhaPortaDir);
+
+    // Barras Duplas de Proteção Ciclista Laterais
+    [-1.14, 1.14].forEach((zPos) => {
+      [0.86, 0.68].forEach((yPos) => {
+        const protetor = new THREE.Mesh(
+          new THREE.BoxGeometry(2.15, 0.08, 0.04),
+          matAluminio
+        );
+        protetor.position.set(0.15, yPos, zPos);
+        registrarPeca(protetor, 'UNDERTRUCK');
+        truckGroup.add(protetor);
+      });
+    });
+
+    // ========================================================================
+    // 7. ANEL HOLOGRÁFICO E PULSO NEON NA PEÇA AFETADA
+    // ========================================================================
+    const matAnelAlerta = new THREE.MeshBasicMaterial({
+      color: 0xff3300,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const anelLaser = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32), matAnelAlerta);
+    anelLaser.rotation.x = Math.PI / 2;
+    truckGroup.add(anelLaser);
+
+    const coordsPorZona3D = {
+      MOTOR: { x: -2.38, y: 1.25, z: 0 },
+      TRANSMISSAO: { x: -1.15, y: 0.96, z: 0 },
+      PARTIDA: { x: -2.55, y: 1.85, z: 0 },
+      UNDERTRUCK: { x: 0.4, y: 0.78, z: 0.78 },
+      PNEU: { x: 2.05, y: 0.58, z: 1.05 },
+      BAU: { x: 1.45, y: 2.35, z: 0 },
+      PREVENTIVA: { x: -0.5, y: 2.35, z: 0 },
+      SINISTRO: { x: -3.35, y: 1.05, z: 0 },
+    };
+
+    // ========================================================================
+    // INTERAÇÃO DE MOUSE (ARRASTAR 360°, SCROLL ZOOM E CLIQUE DIRETO NA PEÇA 3D)
+    // ========================================================================
+    const raycaster = new THREE.Raycaster();
+    const mouseVec = new THREE.Vector2();
+    let isDragging = false;
+    let moveuMouse = false;
+    let prevX = 0;
+    let prevY = 0;
+
+    const onPointerDown = (e) => {
+      isDragging = true;
+      moveuMouse = false;
+      prevX = e.clientX;
+      prevY = e.clientY;
+    };
+
+    const onPointerMove = (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - prevX;
+      const dy = e.clientY - prevY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moveuMouse = true;
+      prevX = e.clientX;
+      prevY = e.clientY;
+
+      stateRef.current.targetTheta -= dx * 0.0085;
+      stateRef.current.targetPhi = Math.max(
+        0.12,
+        Math.min(Math.PI / 2 - 0.04, stateRef.current.targetPhi - dy * 0.0085)
+      );
+    };
+
+    const onPointerUp = (e) => {
+      if (isDragging && !moveuMouse) {
+        // Se foi um clique rápido na peça 3D, descobre qual peça foi clicada!
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouseVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouseVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouseVec, camera);
+        const intersects = raycaster.intersectObjects(todosMeshesClicaveis, false);
+        if (intersects.length > 0) {
+          const zClicada = intersects[0].object.userData?.zonaId;
+          if (zClicada) {
+            stateRef.current.zonaDestacada = zClicada;
+            setFiltroZona3D((atual) => (atual === zClicada ? 'TODAS' : zClicada));
+          }
+        }
+      }
+      isDragging = false;
+    };
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      stateRef.current.targetRadius = Math.max(
+        5.2,
+        Math.min(18.0, stateRef.current.targetRadius + e.deltaY * 0.006)
+      );
+    };
+
+    const domElem = renderer.domElement;
+    domElem.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    domElem.addEventListener('wheel', onWheel, { passive: false });
+
+    // ========================================================================
+    // LOOP DE ANIMAÇÃO 60 FPS (NEON PULSANTE + PEÇAS VIVAS)
+    // ========================================================================
+    let reqId;
+    let clock = 0;
+
+    const animate = () => {
+      reqId = requestAnimationFrame(animate);
+      clock += 0.065;
+      const s = stateRef.current;
+
+      if (s.autoGirar && !isDragging) {
+        s.targetTheta += 0.006;
+      }
+
+      s.theta += (s.targetTheta - s.theta) * 0.1;
+      s.phi += (s.targetPhi - s.phi) * 0.1;
+      s.radius += (s.targetRadius - s.radius) * 0.1;
+
+      s.currentLookAt.x += (s.lookAtTarget.x - s.currentLookAt.x) * 0.1;
+      s.currentLookAt.y += (s.lookAtTarget.y - s.currentLookAt.y) * 0.1;
+      s.currentLookAt.z += (s.lookAtTarget.z - s.currentLookAt.z) * 0.1;
+
+      camera.position.x =
+        s.currentLookAt.x + s.radius * Math.sin(s.phi) * Math.cos(s.theta);
+      camera.position.y = s.currentLookAt.y + s.radius * Math.cos(s.phi);
+      camera.position.z =
+        s.currentLookAt.z + s.radius * Math.sin(s.phi) * Math.sin(s.theta);
+      camera.lookAt(s.currentLookAt.x, s.currentLookAt.y, s.currentLookAt.z);
+
+      // 1. Basculamento suave da Cabine (42 graus)
+      const anguloAlvoCabine = s.cabineBasculada ? 0.74 : 0.0;
+      cabinePivot.rotation.z += (anguloAlvoCabine - cabinePivot.rotation.z) * 0.09;
+
+      // 2. Abertura suave das Portas Traseiras do Baú
+      const anguloPorta = s.portasBauAbertas ? 1.65 : 0.0;
+      portaTraseiraEsqPivot.rotation.y +=
+        (anguloPorta - portaTraseiraEsqPivot.rotation.y) * 0.09;
+      portaTraseiraDirPivot.rotation.y +=
+        (-anguloPorta - portaTraseiraDirPivot.rotation.y) * 0.09;
+
+      // 3. Rotação viva da Hélice do Radiador e do Eixo Cardan
+      heliceGroup.rotation.x += 0.18;
+      cardanMesh.rotation.x += 0.12;
+
+      // 4. Modo Raio-X inteligente
+      const opacidadeAlvo = s.raioX ? 0.16 : 1.0;
+      materiaisExternos.forEach((mat) => {
+        mat.opacity += (opacidadeAlvo - mat.opacity) * 0.12;
+        mat.depthWrite = mat.opacity > 0.5;
+      });
+
+      // 5. BRILHO NEON PULSANTE APENAS NA PEÇA COM DEFEITO!
+      const pulsoNeon = 0.45 + Math.abs(Math.sin(clock * 2.4)) * 0.55;
+      Object.keys(meshesPorZona).forEach((zKey) => {
+        const ehZonaAfetada = zKey === s.zonaDestacada;
+        meshesPorZona[zKey].forEach((m) => {
+          const mats = Array.isArray(m.material) ? m.material : [m.material];
+          mats.forEach((mat) => {
+            if (!mat.emissive) return;
+            if (ehZonaAfetada && s.zonaDestacada !== 'PREVENTIVA') {
+              mat.emissive.setHex(s.corHexDestacada);
+              mat.emissiveIntensity = pulsoNeon * 0.85;
+            } else {
+              mat.emissive.setHex(0x000000);
+              mat.emissiveIntensity = 0;
+            }
+          });
+        });
+      });
+
+      // 6. Anel Laser no ponto da avaria
+      const posAlerta = coordsPorZona3D[s.zonaDestacada] || coordsPorZona3D.PREVENTIVA;
+      anelLaser.position.set(posAlerta.x, posAlerta.y, posAlerta.z);
+      matAnelAlerta.color.setHex(s.corHexDestacada);
+      const escalaAnel = 1 + Math.sin(clock * 2.5) * 0.3;
+      anelLaser.scale.set(escalaAnel, escalaAnel, 1);
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    const handleResize = () => {
+      if (!container) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      cancelAnimationFrame(reqId);
+      domElem.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      domElem.removeEventListener('wheel', onWheel);
+      window.removeEventListener('resize', handleResize);
+      renderer.dispose();
+    };
+  }, [threeCarregado, modoVisualizacao]);
+
+  const toggleGirar = () => {
+    const novo = !autoGirarUI;
+    setAutoGirarUI(novo);
+    stateRef.current.autoGirar = novo;
+  };
+
+  const toggleRaioX = () => {
+    const novo = !raioXUI;
+    setRaioXUI(novo);
+    stateRef.current.raioX = novo;
+  };
+
+  const toggleRotulos = () => {
+    const novo = !rotulosUI;
+    setRotulosUI(novo);
+    stateRef.current.mostrarRotulos = novo;
+  };
+
+  const toggleCabine = () => {
+    const novo = !cabineUI;
+    setCabineUI(novo);
+    stateRef.current.cabineBasculada = novo;
+  };
+
+  const togglePortasBau = () => {
+    const novo = !bauAbertoUI;
+    setBauAbertoUI(novo);
+    stateRef.current.portasBauAbertas = novo;
+  };
+
+  const limparFiltros3D = () => {
+    setAutoGirarUI(false);
+    setRaioXUI(false);
+    setCabineUI(false);
+    setBauAbertoUI(false);
+    stateRef.current.autoGirar = false;
+    stateRef.current.raioX = false;
+    stateRef.current.cabineBasculada = false;
+    stateRef.current.portasBauAbertas = false;
+    setFiltroZona3D('TODAS');
+    moverCameraParaPreset('ISO', false, false);
+  };
+
+  return (
+    <div className="lg:col-span-8 rounded-2xl border border-gray-700/80 bg-[#141d2b] p-4 shadow-2xl relative overflow-hidden flex flex-col justify-between">
+      {/* BARRA DE CONTROLE SUPERIOR */}
+      <div className="space-y-2.5 relative z-20">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 pb-2.5">
+          {/* ALTERNADOR VITRINE 3D vs ESQUEMA 2D */}
+          <div className="flex items-center gap-1.5 bg-[#0B1329] p-1 rounded-xl border border-gray-700">
+            <button
+              onClick={() => setModoVisualizacao('3D')}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase flex items-center gap-1.5 transition-all ${
+                modoVisualizacao === '3D'
+                  ? 'bg-cyan-500 text-gray-950 shadow-md'
+                  : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              <Box size={14} />
+              <span>Vitrine 3D (360°)</span>
+            </button>
+            <button
+              onClick={() => setModoVisualizacao('2D')}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase flex items-center gap-1.5 transition-all ${
+                modoVisualizacao === '2D'
+                  ? 'bg-yellow-400 text-gray-950 shadow-md'
+                  : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              <Layers size={14} />
+              <span>Esquema 2D (VW 8.120)</span>
+            </button>
+          </div>
+
+          {modoVisualizacao === '3D' && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={toggleGirar}
+                className={`px-2.5 py-1 rounded text-[10px] font-black uppercase border transition-all ${
+                  autoGirarUI
+                    ? 'bg-yellow-400 text-gray-950 border-yellow-300'
+                    : 'bg-[#1f2937]/90 text-yellow-400 border-yellow-500/40'
+                }`}
+              >
+                GIRAR
+              </button>
+              <button
+                onClick={toggleRaioX}
+                className={`px-2.5 py-1 rounded text-[10px] font-black uppercase border transition-all ${
+                  raioXUI
+                    ? 'bg-yellow-400 text-gray-950 border-yellow-300'
+                    : 'bg-[#1f2937]/90 text-yellow-400 border-yellow-500/40'
+                }`}
+              >
+                RAIO-X
+              </button>
+              <button
+                onClick={toggleRotulos}
+                className={`px-2.5 py-1 rounded text-[10px] font-black uppercase border transition-all ${
+                  rotulosUI
+                    ? 'bg-yellow-400 text-gray-950 border-yellow-300'
+                    : 'bg-[#1f2937]/90 text-yellow-400 border-yellow-500/40'
+                }`}
+              >
+                RÓTULOS
+              </button>
+              <button
+                onClick={toggleCabine}
+                className={`px-2.5 py-1 rounded text-[10px] font-black uppercase border transition-all ${
+                  cabineUI
+                    ? 'bg-yellow-400 text-gray-950 border-yellow-300 shadow-lg'
+                    : 'bg-[#1f2937]/90 text-yellow-400 border-yellow-500/40'
+                }`}
+              >
+                CABINE {cabineUI ? '(ABERTA)' : ''}
+              </button>
+              <button
+                onClick={togglePortasBau}
+                className={`px-2.5 py-1 rounded text-[10px] font-black uppercase border transition-all ${
+                  bauAbertoUI
+                    ? 'bg-yellow-400 text-gray-950 border-yellow-300 shadow-lg'
+                    : 'bg-[#1f2937]/90 text-yellow-400 border-yellow-500/40'
+                }`}
+              >
+                PORTAS BAÚ
+              </button>
+              <button
+                onClick={limparFiltros3D}
+                className="px-2.5 py-1 rounded text-[10px] font-black uppercase border bg-[#1f2937]/90 text-yellow-400 border-yellow-500/40 hover:bg-yellow-400 hover:text-gray-950"
+              >
+                LIMPAR
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ATALHOS DE CÂMERA 3D */}
+        {modoVisualizacao === '3D' && (
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'MOTOR', label: 'MOTOR', zona: 'MOTOR' },
+                { id: 'CAMBIO', label: 'TRANSMISSÃO / UNDERTRUCK', zona: 'TRANSMISSAO' },
+                { id: 'PNEUS', label: 'PNEUS E EIXOS', zona: 'PNEU' },
+                { id: 'FRENTE', label: 'PARTIDA / FRENTE', zona: 'PARTIDA' },
+                { id: 'TRASEIRA', label: 'BAÚ / TRASEIRA', zona: 'BAU' },
+                { id: 'ESQ', label: 'ESQ.' },
+                { id: 'DIR', label: 'DIR.' },
+                { id: 'TOPO', label: 'TOPO' },
+              ].map((btn) => (
+                <button
+                  key={btn.id}
+                  onClick={() => {
+                    moverCameraParaPreset(btn.id);
+                    if (btn.zona) {
+                      stateRef.current.zonaDestacada = btn.zona;
+                      setFiltroZona3D(btn.zona);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded text-[10px] font-black uppercase border transition-all ${
+                    cameraAtivaUI === btn.id
+                      ? 'bg-yellow-400 text-gray-950 border-yellow-300'
+                      : 'bg-[#1f2937]/70 text-yellow-400/90 border-yellow-500/30 hover:border-yellow-400'
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] font-bold text-gray-400 hidden xl:inline">
+              🖱️ Arraste 360° • Clique na peça 3D p/ filtrar
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* PALCO CENTRAL 3D OU 2D */}
+      {modoVisualizacao === '3D' ? (
+        <div className="relative my-2 flex-1 min-h-[350px] w-full rounded-xl overflow-hidden bg-gradient-to-b from-[#1a2436] to-[#0f172a] border border-gray-800/80">
+          <div
+            ref={mountRef}
+            className="w-full h-[350px] cursor-grab active:cursor-grabbing"
+          />
+
+          {rotulosUI && veiculo && (
+            <div className="absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+              <div className="bg-[#0B1329]/90 backdrop-blur-md border border-yellow-400/40 px-3.5 py-2 rounded-xl shadow-lg flex items-center gap-2.5">
+                <span
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white"
+                  style={{ backgroundColor: zonaAtiva.cor }}
+                >
+                  {zonaAtiva.simbolo}
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-xs text-yellow-400">
+                      PLACA : {veiculo.placa}
+                    </span>
+                    <span className="text-[10px] font-black text-white uppercase">
+                      • {zonaAtiva.nome}
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-bold text-rose-400">
+                    Diagnóstico: {veiculo.status || 'Em diagnóstico'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-[#0B1329]/85 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold text-gray-300">
+                Oficina: <span className="text-white font-black">{veiculo.oficina}</span> | CDV:{' '}
+                <span className="text-cyan-400 font-black">{veiculo.cdv}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="my-2">
+          <PlantaTecnica2DCaminhao
+            veiculo={veiculo}
+            zonaAtiva={zonaAtiva}
+            filtroZona3D={filtroZona3D}
+            setFiltroZona3D={setFiltroZona3D}
+          />
+        </div>
+      )}
+
+      {/* BARRA DE FILTROS INFERIOR COM FLEX-WRAP (SEM CORTAR OS TEXTOS!) */}
+      <div className="pt-2.5 border-t border-gray-800 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider shrink-0">
+          Filtrar Tabela por Sistema:
+        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { id: 'TODAS', label: 'Todos', cor: '#06b6d4' },
+            { id: 'MOTOR', label: 'Motor', cor: '#ef4444' },
+            { id: 'TRANSMISSAO', label: 'Transmissão', cor: '#f97316' },
+            { id: 'PARTIDA', label: 'Partida/Elétrica', cor: '#eab308' },
+            { id: 'UNDERTRUCK', label: 'Undertruck', cor: '#a855f7' },
+            { id: 'PNEU', label: 'Pneus/Rodas', cor: '#ec4899' },
+            { id: 'BAU', label: 'Baú', cor: '#3b82f6' },
+            { id: 'PREVENTIVA', label: 'Preventiva', cor: '#10b981' },
+          ].map((z) => {
+            const ativo = filtroZona3D === z.id;
+            return (
+              <button
+                key={z.id}
+                onClick={() => {
+                  setFiltroZona3D(z.id);
+                  if (z.id !== 'TODAS') stateRef.current.zonaDestacada = z.id;
+                }}
+                className={`text-[11px] font-black px-3 py-1.5 rounded-lg border flex items-center gap-1.5 whitespace-nowrap transition-all ${
+                  ativo
+                    ? 'bg-cyan-500 text-gray-950 border-cyan-300 shadow-md'
+                    : 'bg-[#1C2541] text-gray-200 border-gray-700 hover:border-cyan-500/50'
+                }`}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: ativo ? '#082f49' : z.cor }}
+                />
+                <span>{z.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// --- FUNÇÕES AUXILIARES DE TRATAMENTO DO EXCEL ---
+// ============================================================================
+function formatarDataVersaoBancoNoTopo(raw) {
   if (!raw || String(raw).trim() === '' || String(raw).trim() === '-') return null;
   if (typeof raw === 'number') {
     const UTC_DAYS = Math.floor(raw - 25569);
     const UTC_VALUE = UTC_DAYS * 86400;
-    return new Date(UTC_VALUE * 1000).toISOString().split('T')[0];
+    const dt = new Date(UTC_VALUE * 1000);
+    if (isNaN(dt.getTime())) return null;
+    return dt.toISOString().split('T')[0];
   }
   const textoData = String(raw).trim();
   if (textoData.includes('/')) {
@@ -42,39 +1754,65 @@ function formatarDataVersaoBancoNoTopo(raw, dataPadrao) {
       const dia = partes[0].padStart(2, '0');
       const mes = partes[1].padStart(2, '0');
       const ano = partes[2].length === 2 ? `20${partes[2]}` : partes[2];
-      return `${ano}-${mes}-${dia}`;
+      const candidato = `${ano}-${mes}-${dia}`;
+      return /^\d{4}-\d{2}-\d{2}$/.test(candidato) ? candidato : null;
     }
   }
-  return textoData;
-}
-
-// ============================================================================
-// --- CONVERSOR AUXILIAR DE TEXTO PARA NÚMERO DE MÊS LOGÍSTICO ---
-// ============================================================================
-function extrairNumeroMesPorExtenso(texto) {
-  if (!texto) return null;
-  const t = String(texto).toUpperCase().trim();
-  if (t.includes('JAN')) return 1;
-  if (t.includes('FEV')) return 2;
-  if (t.includes('MAR')) return 3;
-  if (t.includes('ABR')) return 4;
-  if (t.includes('MAI')) return 5;
-  if (t.includes('JUN')) return 6;
-  if (t.includes('JUL')) return 7;
-  if (t.includes('AGO')) return 8;
-  if (t.includes('SET')) return 9;
-  if (t.includes('OUT')) return 10;
-  if (t.includes('NOV')) return 11;
-  if (t.includes('DEZ')) return 12;
+  if (/^\d{4}-\d{2}-\d{2}/.test(textoData)) {
+    return textoData.slice(0, 10);
+  }
   return null;
 }
 
-// ============================================================================
-// --- FORMATADOR DE MOEDA BRL (R$) ---
-// ============================================================================
+function extrairNumeroMesPorExtenso(texto) {
+  if (!texto) return null;
+  const t = String(texto).toUpperCase().trim();
+  if (t.includes('JAN') || t === '1' || t === '01') return 1;
+  if (t.includes('FEV') || t === '2' || t === '02') return 2;
+  if (t.includes('MAR') || t === '3' || t === '03') return 3;
+  if (t.includes('ABR') || t === '4' || t === '04') return 4;
+  if (t.includes('MAI') || t === '5' || t === '05') return 5;
+  if (t.includes('JUN') || t === '6' || t === '06') return 6;
+  if (t.includes('JUL') || t === '7' || t === '07') return 7;
+  if (t.includes('AGO') || t === '8' || t === '08') return 8;
+  if (t.includes('SET') || t === '9' || t === '09') return 9;
+  if (t.includes('OUT') || t === '10') return 10;
+  if (t.includes('NOV') || t === '11') return 11;
+  if (t.includes('DEZ') || t === '12') return 12;
+  return null;
+}
+
 function formatarMoeda(valor) {
   const num = Number(valor) || 0;
   return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function limparNumeroMoeda(val) {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return val;
+  const limpo = String(val)
+    .replace(/[R$\s]/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  return Number(limpo) || 0;
+}
+
+function gerarCarimboDataHoraAtual() {
+  const agora = new Date();
+  return `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
+}
+
+function formatarCreatedAtBanco(isoStr) {
+  if (!isoStr) return null;
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return null;
+  return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
 }
 
 // ============================================================================
@@ -108,7 +1846,20 @@ function App() {
   const [subAbaFrota, setSubAbaFrota] = useState('preventivas');
   const [carregando, setCarregando] = useState(false);
   const [rotacionar, setRotacionar] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  // --- CARIMBOS DE ÚLTIMA ATUALIZAÇÃO DOS 4 MÓDULOS ---
+  const [ultimaAtuPrev, setUltimaAtuPrev] = useState(
+    () => localStorage.getItem('atu_prev_sul2') || 'Aguardando planilha'
+  );
+  const [ultimaAtuTaco, setUltimaAtuTaco] = useState(
+    () => localStorage.getItem('atu_taco_sul2') || 'Aguardando planilha'
+  );
+  const [ultimaAtuFin, setUltimaAtuFin] = useState(
+    () => localStorage.getItem('atu_fin_sul2') || 'Aguardando planilha'
+  );
+  const [ultimaAtuParados, setUltimaAtuParados] = useState(
+    () => localStorage.getItem('atu_parados_sul2') || 'Aguardando planilha'
+  );
 
   // --- FILTROS DE BUSCA ---
   const [termoBusca, setTermoBusca] = useState('');
@@ -116,6 +1867,8 @@ function App() {
   const [termoBuscaGerencial, setTermoBuscaGerencial] = useState('');
   const [termoBuscaGerencialTaco, setTermoBuscaGerencialTaco] = useState('');
   const [termoBuscaFinanceiro, setTermoBuscaFinanceiro] = useState('');
+  const [termoBuscaParados, setTermoBuscaParados] = useState('');
+  const [buscaPlaca3DTopo, setBuscaPlaca3DTopo] = useState('');
 
   // --- SELETORES DE DATA ---
   const [mesSelecionadoHistorico, setMesSelecionadoHistorico] = useState(
@@ -132,16 +1885,46 @@ function App() {
   const [nfFiltroFinanceiro, setNfFiltroFinanceiro] = useState('TODAS');
   const [cdvFiltroFinanceiro, setCdvFiltroFinanceiro] = useState('TODOS');
 
-  // --- FROTA OFICIAL POR CDV (ABA POSIÇÃO NACIONAL - SUL2 = 485 PLACAS) ---
-  const [frotaPorCdv, setFrotaPorCdv] = useState({
-    'CDV BELTRAO': 24,
-    'CDV CAMPO MOURAO': 39,
-    'CDV CASCAVEL': 60,
-    'CDV GASPAR': 101,
-    'CDV LONDRINA': 69,
-    'CDV MARINGA': 2,
-    'CDV MEGA CURITIBA': 135,
-    'CDV PONTA GROSSA': 55,
+  // --- ESTADOS DA ABA: VEÍCULOS PARADOS & RESUMO (100% VINDOS DO BANCO/PLANILHA!) ---
+  const [veiculosParados, setVeiculosParados] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('cache_veiculos_parados_sul2');
+      return salvo ? JSON.parse(salvo) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [resumoDispo, setResumoDispo] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('cache_resumo_dispo_sul2');
+      return salvo ? JSON.parse(salvo) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [veiculo3dSelecionado, setVeiculo3dSelecionado] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('cache_veiculos_parados_sul2');
+      const lista = salvo ? JSON.parse(salvo) : [];
+      return lista.length > 0 ? lista[0] : null;
+    } catch {
+      return null;
+    }
+  });
+  const [filtroDispoParados, setFiltroDispoParados] = useState('TODOS');
+  const [filtroCdvParados, setFiltroCdvParados] = useState('TODOS');
+  const [filtroOficinaParados, setFiltroOficinaParados] = useState('TODAS');
+  const [filtroZona3D, setFiltroZona3D] = useState('TODAS');
+  const [substituirParados, setSubstituirParados] = useState(true);
+
+  // --- FROTA POR CDV EXTRAÍDA DINAMICAMENTE DA PLANILHA / BANCO ---
+  const [frotaPorCdv, setFrotaPorCdv] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('frota_cdv_sul2');
+      return salvo ? JSON.parse(salvo) : {};
+    } catch {
+      return {};
+    }
   });
 
   // --- INTERRUPTORES DE SUBSTITUIÇÃO ---
@@ -149,7 +1932,7 @@ function App() {
   const [substituirTaco, setSubstituirTaco] = useState(false);
   const [substituirFinanceiro, setSubstituirFinanceiro] = useState(true);
 
-  // --- DADOS REAIS DO BANCO ---
+  // --- DADOS REAIS DO SUPABASE ---
   const [veiculos, setVeiculos] = useState([]);
   const [preventivas, setPreventivas] = useState([]);
   const [tacografos, setTacografos] = useState([]);
@@ -177,21 +1960,39 @@ function App() {
         .from('preventivas')
         .select('*')
         .order('placa', { ascending: true });
-      setPreventivas(prevData || []);
+      if (prevData) {
+        setPreventivas(prevData);
+        if (
+          prevData.length > 0 &&
+          prevData[0].created_at &&
+          !localStorage.getItem('atu_prev_sul2')
+        ) {
+          setUltimaAtuPrev(formatarCreatedAtBanco(prevData[0].created_at));
+        }
+      }
 
       const { data: tacoData } = await supabase
         .from('tacografos')
         .select('*')
         .order('placa', { ascending: true });
-      setTacografos(tacoData || []);
+      if (tacoData && tacoData.length > 0) {
+        setTacografos(tacoData);
+        if (tacoData[0].created_at && !localStorage.getItem('atu_taco_sul2')) {
+          setUltimaAtuTaco(formatarCreatedAtBanco(tacoData[0].created_at));
+        }
+      }
 
       const { data: rateioData } = await supabase
         .from('financeiro_rateio')
         .select('*')
         .order('id', { ascending: true });
       setFinRateio(rateioData || []);
-      if (rateioData && rateioData.length > 0 && rateioData[0].mes) {
-        setMesSelecionadoFinanceiro(Number(rateioData[0].mes));
+      if (rateioData && rateioData.length > 0) {
+        if (rateioData[0].mes)
+          setMesSelecionadoFinanceiro(Number(rateioData[0].mes));
+        if (rateioData[0].created_at && !localStorage.getItem('atu_fin_sul2')) {
+          setUltimaAtuFin(formatarCreatedAtBanco(rateioData[0].created_at));
+        }
       }
 
       const { data: ctaData } = await supabase
@@ -200,7 +2001,33 @@ function App() {
         .order('valor', { ascending: false });
       setFinCta(ctaData || []);
 
-      // Busca até 10000 registros da base financeira em lotes
+      const { data: paradosData } = await supabase
+        .from('veiculos_parados')
+        .select('*')
+        .order('id', { ascending: true });
+      if (paradosData && paradosData.length > 0) {
+        setVeiculosParados(paradosData);
+        if (paradosData.length > 0) {
+          setVeiculo3dSelecionado((atual) => atual || paradosData[0]);
+          if (
+            paradosData[0].created_at &&
+            !localStorage.getItem('atu_parados_sul2')
+          ) {
+            setUltimaAtuParados(
+              formatarCreatedAtBanco(paradosData[0].created_at)
+            );
+          }
+        }
+      }
+
+      const { data: resDispoData } = await supabase
+        .from('resumo_disponibilidade')
+        .select('*')
+        .order('id', { ascending: true });
+      if (resDispoData && resDispoData.length > 0) {
+        setResumoDispo(resDispoData);
+      }
+
       let todasBase = [];
       let de = 0;
       const passo = 1000;
@@ -230,7 +2057,7 @@ function App() {
       setAutenticado(true);
       setErroLogin('');
     } else {
-      setErroLogin('Usuário ou senha inválidos!');
+      setErroLogin('Usuário ou senha inválidos operacionalmente!');
     }
   };
 
@@ -238,7 +2065,7 @@ function App() {
   const limparTodaTabelaPreventivas = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de preventivas. Tem certeza absoluta que quer fazer isso?'
+        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de preventivas no Supabase. Tem certeza absoluta?'
       )
     ) {
       setCarregando(true);
@@ -248,6 +2075,7 @@ function App() {
           .delete()
           .neq('placa', 'REMOVER_TUDO_MASTER');
         if (error) throw error;
+        setPreventivas([]);
         alert('Tabela de preventivas completamente limpa!');
         fetchDados();
       } catch (err) {
@@ -261,7 +2089,7 @@ function App() {
   const limparTodaTabelaTacografos = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de tacógrafos no Supabase. Tem certeza absoluta que quer fazer isso?'
+        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de tacógrafos no Supabase. Tem certeza absoluta?'
       )
     ) {
       setCarregando(true);
@@ -271,6 +2099,7 @@ function App() {
           .delete()
           .neq('placa', 'REMOVER_TUDO_MASTER');
         if (error) throw error;
+        setTacografos([]);
         alert('Tabela de tacógrafos completamente limpa!');
         fetchDados();
       } catch (err) {
@@ -284,7 +2113,7 @@ function App() {
   const limparTodaTabelaFinanceiro = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros Financeiros (Rateio, Base de OS e Alertas CTA) no Supabase. Tem certeza absoluta?'
+        '⚠️ CUIDADO: Você vai apagar TODOS os registros Financeiros no Supabase. Tem certeza absoluta?'
       )
     ) {
       setCarregando(true);
@@ -292,10 +2121,36 @@ function App() {
         await supabase.from('financeiro_rateio').delete().neq('conta', 'REMOVER_TUDO');
         await supabase.from('financeiro_cta').delete().neq('placa', 'REMOVER_TUDO');
         await supabase.from('financeiro_base').delete().neq('os', 'REMOVER_TUDO');
+        setFinRateio([]);
+        setFinCta([]);
+        setFinBase([]);
         alert('Tabelas financeiras completamente limpas!');
         fetchDados();
       } catch (err) {
         alert('Erro ao limpar banco financeiro: ' + err.message);
+      } finally {
+        setCarregando(false);
+      }
+    }
+  };
+
+  const limparTodaTabelaParados = async () => {
+    if (
+      confirm(
+        '⚠️ CUIDADO: Você vai apagar TODOS os registros de Veículos Parados e Resumo de Disponibilidade no Supabase. Tem certeza?'
+      )
+    ) {
+      setCarregando(true);
+      try {
+        await supabase.from('veiculos_parados').delete().neq('placa', 'REMOVER_TUDO');
+        await supabase.from('resumo_disponibilidade').delete().neq('cdv', 'REMOVER_TUDO');
+        setVeiculosParados([]);
+        setResumoDispo([]);
+        setVeiculo3dSelecionado(null);
+        alert('Tabelas de disponibilidade completamente limpas!');
+        fetchDados();
+      } catch (err) {
+        alert('Erro ao limpar banco de parados: ' + err.message);
       } finally {
         setCarregando(false);
       }
@@ -321,12 +2176,10 @@ function App() {
       try {
         const dadosBinarios = evento.target.result;
         const livro = XLSX.read(dadosBinarios, { type: 'binary' });
-        const nomeFolhaAlvo = 'PREVENTIVAS SUL2';
-        if (!livro.SheetNames.includes(nomeFolhaAlvo)) {
-          throw new Error(
-            `Aba obrigatória "${nomeFolhaAlvo}" não foi encontrada!`
-          );
-        }
+        const nomeFolhaAlvo = livro.SheetNames.includes('PREVENTIVAS SUL2')
+          ? 'PREVENTIVAS SUL2'
+          : livro.SheetNames[0];
+
         const matrizDados = XLSX.utils.sheet_to_json(
           livro.Sheets[nomeFolhaAlvo],
           { header: 1 }
@@ -339,17 +2192,13 @@ function App() {
           if (!linha || !linha[0]) continue;
 
           const placaRaw = String(linha[0]).toUpperCase().trim();
-          const filialRaw = String(linha[1] || 'GERAL')
-            .toUpperCase()
-            .trim();
-          const cdvRaw = String(linha[2] || '')
-            .toUpperCase()
-            .trim();
+          if (placaRaw === 'PLACA' || placaRaw === 'PLACAS') continue;
+
+          const filialRaw = String(linha[1] || 'GERAL').toUpperCase().trim();
+          const cdvRaw = String(linha[2] || '').toUpperCase().trim();
           const oficinaRaw = String(linha[4] || '').trim();
           const kmRaw = String(linha[7] || '').trim();
-          const statusPlanilha = String(linha[10] || '')
-            .toUpperCase()
-            .trim();
+          const statusPlanilha = String(linha[10] || '').toUpperCase().trim();
           const obsPlanilha = String(linha[11] || '').trim();
           const obs2Planilha = String(linha[12] || '').trim();
           const mesRefRaw = linha[14]
@@ -377,17 +2226,29 @@ function App() {
             ano_referencia: '2026',
           });
         }
+
+        const arrayPrevs = Array.from(mapaPreventivasUnicas.values());
+        setPreventivas(arrayPrevs.map((item, idx) => ({ id: idx + 1, ...item })));
+
+        const carimbo = gerarCarimboDataHoraAtual();
+        setUltimaAtuPrev(carimbo);
+        localStorage.setItem('atu_prev_sul2', carimbo);
+
         if (substituirFrota) {
           await supabase
             .from('preventivas')
             .delete()
             .neq('placa', 'REMOVER_TUDO_MASTER');
         }
-        await supabase
+        const { error: errIns } = await supabase
           .from('preventivas')
-          .insert(Array.from(mapaPreventivasUnicas.values()));
-        alert('Malha de Preventivas por Mês sincronizada!');
-        fetchDados();
+          .insert(arrayPrevs);
+        if (!errIns) {
+          fetchDados();
+        }
+        alert(
+          `✅ Malha de Preventivas sincronizada (${arrayPrevs.length} placas)!\n🕒 Atualizado em: ${carimbo}`
+        );
       } catch (err) {
         alert(err.message);
       } finally {
@@ -398,14 +2259,14 @@ function App() {
     leitor.readAsBinaryString(arquivo);
   };
 
-  // --- IMPORTAÇÃO 2: TACOGRAFOS ---
+  // --- IMPORTAÇÃO 2: TACÓGRAFOS ---
   const lidarComImportacaoTacografos = (e) => {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
     if (
       substituirTaco &&
       !confirm(
-        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir a malha ativa. Deseja prosseguir?'
+        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir a malha ativa de Tacógrafos. Deseja prosseguir?'
       )
     ) {
       e.target.value = '';
@@ -417,28 +2278,54 @@ function App() {
       try {
         const dadosBinarios = evento.target.result;
         const livro = XLSX.read(dadosBinarios, { type: 'binary' });
-        const folha = livro.Sheets[livro.SheetNames[0]];
-        const matrizDados = XLSX.utils.sheet_to_json(folha, { header: 1 });
+
+        let abaEscolhida = livro.SheetNames[0];
+        for (const nomeAba of livro.SheetNames) {
+          const mTeste = XLSX.utils.sheet_to_json(livro.Sheets[nomeAba], {
+            header: 1,
+          });
+          if (mTeste && mTeste.length > 2) {
+            abaEscolhida = nomeAba;
+            break;
+          }
+        }
+
+        const matrizDados = XLSX.utils.sheet_to_json(
+          livro.Sheets[abaEscolhida],
+          { header: 1 }
+        );
         const mapaTacoUnicos = new Map();
 
-        for (let i = 1; i < matrizDados.length; i++) {
+        let linhaInicial = 1;
+        for (let r = 0; r < Math.min(15, matrizDados.length); r++) {
+          const l = matrizDados[r];
+          if (
+            l &&
+            String(l[0] || '')
+              .toUpperCase()
+              .trim()
+              .includes('PLACA')
+          ) {
+            linhaInicial = r + 1;
+            break;
+          }
+        }
+
+        for (let i = linhaInicial; i < matrizDados.length; i++) {
           const linha = matrizDados[i];
           if (!linha || !linha[0]) continue;
 
           const placaRaw = String(linha[0]).toUpperCase().trim();
+          if (placaRaw === 'PLACA' || placaRaw === 'PLACAS' || placaRaw === '')
+            continue;
+
           const modeloRaw = String(linha[1] || 'CAMINHÃO').trim();
-          const cdvRaw = String(linha[2] || '')
-            .toUpperCase()
-            .trim();
-          const filialRaw = String(linha[3] || 'GERAL')
-            .toUpperCase()
-            .trim();
+          const cdvRaw = String(linha[2] || 'GERAL').toUpperCase().trim();
+          const filialRaw = String(linha[3] || 'GERAL').toUpperCase().trim();
           const validadeRaw = linha[4]
-            ? formatarDataVersaoBancoNoTopo(linha[4], null)
+            ? formatarDataVersaoBancoNoTopo(linha[4])
             : null;
-          const statusPlanilha = String(linha[5] || '')
-            .toUpperCase()
-            .trim();
+          const statusPlanilha = String(linha[5] || '').toUpperCase().trim();
           const mesRefRaw = linha[11]
             ? String(linha[11]).toUpperCase().trim()
             : null;
@@ -461,19 +2348,49 @@ function App() {
             ano_referencia: '2026',
           });
         }
+
+        const arrayTacos = Array.from(mapaTacoUnicos.values());
+        if (arrayTacos.length === 0) {
+          throw new Error('Nenhuma placa encontrada na planilha selecionada!');
+        }
+
+        setTacografos(arrayTacos.map((item, idx) => ({ id: idx + 1, ...item })));
+
+        const primeiroComMes = arrayTacos.find((t) =>
+          extrairNumeroMesPorExtenso(t.mes_referencia)
+        );
+        if (primeiroComMes) {
+          setMesSelecionadoTacoGerencial(
+            extrairNumeroMesPorExtenso(primeiroComMes.mes_referencia)
+          );
+        }
+
+        const carimbo = gerarCarimboDataHoraAtual();
+        setUltimaAtuTaco(carimbo);
+        localStorage.setItem('atu_taco_sul2', carimbo);
+
         if (substituirTaco) {
           await supabase
             .from('tacografos')
             .delete()
             .neq('placa', 'REMOVER_TUDO_MASTER');
         }
-        await supabase
+
+        const { error: errTaco } = await supabase
           .from('tacografos')
-          .insert(Array.from(mapaTacoUnicos.values()));
-        alert('Painel de Tacógrafos atualizado com sucesso!');
-        fetchDados();
+          .insert(arrayTacos);
+        if (errTaco) {
+          alert(
+            `✅ ${arrayTacos.length} Tacógrafos carregados na tela com sucesso!\n🕒 Atualizado em: ${carimbo}\n\n(Aviso Supabase: ${errTaco.message})`
+          );
+        } else {
+          await fetchDados();
+          alert(
+            `✅ Painel de Tacógrafos atualizado com sucesso (${arrayTacos.length} veículos)!\n🕒 Última atualização: ${carimbo}`
+          );
+        }
       } catch (err) {
-        alert(err.message);
+        alert('Erro ao carregar Tacógrafos: ' + err.message);
       } finally {
         setCarregando(false);
         e.target.value = '';
@@ -482,14 +2399,14 @@ function App() {
     leitor.readAsBinaryString(arquivo);
   };
 
-  // --- IMPORTAÇÃO 3: FINANCEIRO (LÊ DIVISÃO RATEIO + CTA + BASE (SUL II) + POSIÇÃO NACIONAL) ---
+  // --- IMPORTAÇÃO 3: FINANCEIRO ---
   const lidarComImportacaoFinanceiro = (e) => {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
     if (
       substituirFinanceiro &&
       !confirm(
-        '⚠️ Deseja atualizar e substituir a base financeira (DIVISÃO RATEIO + BASE SUL II + CTA)?'
+        '⚠️ Deseja atualizar e substituir a base financeira (DIVISÃO RATEIO + BASE SUL II + CTA + POSIÇÃO NACIONAL)?'
       )
     ) {
       e.target.value = '';
@@ -502,7 +2419,6 @@ function App() {
         const dadosBinarios = evento.target.result;
         const livro = XLSX.read(dadosBinarios, { type: 'binary' });
 
-        // 1. Validar abas necessárias
         if (!livro.SheetNames.includes('DIVISÃO RATEIO')) {
           throw new Error('A aba "DIVISÃO RATEIO" não foi encontrada na planilha!');
         }
@@ -510,9 +2426,7 @@ function App() {
           throw new Error('A aba "BASE (SUL II)" não foi encontrada na planilha!');
         }
 
-        // ====================================================================
-        // PARTE 0: ATUALIZAR CONTAGEM DE PLACAS DA ABA "Posição Nacional" (SE EXISTIR)
-        // ====================================================================
+        // Extrai dinamicamente a frota por CDV direto da aba Posição Nacional da planilha!
         if (livro.SheetNames.includes('Posição Nacional')) {
           const matrizPN = XLSX.utils.sheet_to_json(
             livro.Sheets['Posição Nacional'],
@@ -530,12 +2444,10 @@ function App() {
           }
           if (Object.keys(novoMapaCdv).length > 0) {
             setFrotaPorCdv(novoMapaCdv);
+            localStorage.setItem('frota_cdv_sul2', JSON.stringify(novoMapaCdv));
           }
         }
 
-        // ====================================================================
-        // PARTE A: EXTRAIR ABA "DIVISÃO RATEIO" DIRETAMENTE
-        // ====================================================================
         const matrizRateio = XLSX.utils.sheet_to_json(
           livro.Sheets['DIVISÃO RATEIO'],
           { header: 1 }
@@ -608,9 +2520,6 @@ function App() {
           }
         }
 
-        // ====================================================================
-        // PARTE B: EXTRAIR ABA "CTA" (CALL TO ACTION - ALERTAS CRÍTICOS)
-        // ====================================================================
         const listaCtaParaInserir = [];
         if (livro.SheetNames.includes('CTA')) {
           const matrizCta = XLSX.utils.sheet_to_json(livro.Sheets['CTA'], {
@@ -639,14 +2548,11 @@ function App() {
           }
         }
 
-        // ====================================================================
-        // PARTE C: EXTRAIR ABA "BASE (SUL II)" (ORDENS DE SERVIÇO)
-        // ====================================================================
         const matrizBase = XLSX.utils.sheet_to_json(
           livro.Sheets['BASE (SUL II)'],
           { header: 1 }
         );
-        let linhaHeaderBase = 10; // Padrão linha 11 no Excel (índice 10)
+        let linhaHeaderBase = 10;
         for (let r = 0; r < Math.min(20, matrizBase.length); r++) {
           const row = matrizBase[r];
           if (row && String(row[1] || '').toUpperCase().trim() === 'OS') {
@@ -670,7 +2576,7 @@ function App() {
 
           listaBaseParaInserir.push({
             os: osRaw || '-',
-            data_os: formatarDataVersaoBancoNoTopo(row[2], null),
+            data_os: formatarDataVersaoBancoNoTopo(row[2]),
             placa: placaRaw || '-',
             estabelecimento: row[4] ? String(row[4]).trim() : '-',
             valor_total: valorRaw,
@@ -680,16 +2586,17 @@ function App() {
             conta_tl: row[9] ? String(row[9]).trim() : null,
             conta_correcao: row[10] ? String(row[10]).toUpperCase().trim() : 'OUTROS',
             status: row[11] ? String(row[11]).trim() : 'Pendente',
-            data_faturamento: formatarDataVersaoBancoNoTopo(row[12], null),
+            data_faturamento: formatarDataVersaoBancoNoTopo(row[12]),
             mes: mesRaw,
             titulo: row[14] && !String(row[14]).includes('#') ? String(row[14]).trim() : null,
             nf: nfRaw,
           });
         }
 
-        // ====================================================================
-        // SINCRONIZAÇÃO COM O SUPABASE
-        // ====================================================================
+        const carimbo = gerarCarimboDataHoraAtual();
+        setUltimaAtuFin(carimbo);
+        localStorage.setItem('atu_fin_sul2', carimbo);
+
         if (substituirFinanceiro) {
           await supabase.from('financeiro_rateio').delete().neq('conta', 'REMOVER_TUDO');
           await supabase.from('financeiro_cta').delete().neq('placa', 'REMOVER_TUDO');
@@ -710,7 +2617,6 @@ function App() {
           if (errCta) throw errCta;
         }
 
-        // Inserir a BASE (SUL II) em lotes de 500 registros para alta velocidade
         const tamanhoLote = 500;
         for (let i = 0; i < listaBaseParaInserir.length; i += tamanhoLote) {
           const lote = listaBaseParaInserir.slice(i, i + tamanhoLote);
@@ -720,11 +2626,171 @@ function App() {
 
         setMesSelecionadoFinanceiro(mesRateioPlanilha);
         alert(
-          `✅ Sincronização Financeira Concluída!\n- Divisão Rateio (Mês ${mesRateioPlanilha}): ${listaRateioParaInserir.length} linhas\n- Alertas CTA: ${listaCtaParaInserir.length} veículos críticos\n- Base SUL II: ${listaBaseParaInserir.length} registros importados`
+          `✅ Sincronização Financeira Concluída!\n🕒 Atualizado em: ${carimbo}\n- Divisão Rateio (Mês ${mesRateioPlanilha}): ${listaRateioParaInserir.length} linhas\n- Alertas CTA: ${listaCtaParaInserir.length} veículos críticos\n- Base SUL II: ${listaBaseParaInserir.length} registros`
         );
         fetchDados();
       } catch (err) {
         alert('Erro na importação financeira: ' + err.message);
+      } finally {
+        setCarregando(false);
+        e.target.value = '';
+      }
+    };
+    leitor.readAsBinaryString(arquivo);
+  };
+
+  // --- IMPORTAÇÃO 4: CONTROLE DE VEÍCULOS PARADOS (100% DINÂMICO PELA PLANILHA!) ---
+  const lidarComImportacaoVeiculosParados = (e) => {
+    const arquivo = e.target.files[0];
+    if (!arquivo) return;
+    setCarregando(true);
+    const leitor = new FileReader();
+    leitor.onload = async (evento) => {
+      try {
+        const dadosBinarios = evento.target.result;
+        const livro = XLSX.read(dadosBinarios, { type: 'binary' });
+
+        if (!livro.SheetNames.includes('Em Oficina')) {
+          throw new Error('Aba "Em Oficina" não encontrada na planilha!');
+        }
+
+        // 1. Extrai todas as linhas reais da aba "Em Oficina"
+        const matrizOficina = XLSX.utils.sheet_to_json(
+          livro.Sheets['Em Oficina'],
+          { header: 1 }
+        );
+        const listaParados = [];
+        for (let i = 1; i < matrizOficina.length; i++) {
+          const row = matrizOficina[i];
+          if (!row || !row[0]) continue;
+          const placaRaw = String(row[0]).toUpperCase().trim();
+          if (placaRaw === 'PLACAS' || placaRaw === 'PLACA' || placaRaw === '')
+            continue;
+
+          listaParados.push({
+            placa: placaRaw,
+            filial: String(row[1] || 'GERAL').toUpperCase().trim(),
+            oficina: String(row[2] || 'SEM OFICINA').toUpperCase().trim(),
+            cdv: String(row[3] || 'GERAL').toUpperCase().trim(),
+            status: String(row[4] || 'EM DIAGNÓSTICO').trim(),
+            os: row[5] ? String(row[5]).trim() : '--',
+            valor: limparNumeroMoeda(row[6]),
+            previsao: formatarDataVersaoBancoNoTopo(row[7]),
+            disponibilidade: String(row[8] || 'Em oficina').trim(),
+          });
+        }
+
+        // 2. Extrai o Resumo das Filiais/CDVs direto da aba "Resumo" (ou calcula da Posição Nacional se necessário!)
+        let listaResumo = [];
+        if (livro.SheetNames.includes('Resumo')) {
+          const matrizResumo = XLSX.utils.sheet_to_json(
+            livro.Sheets['Resumo'],
+            { header: 1 }
+          );
+          for (let i = 0; i < matrizResumo.length; i++) {
+            const row = matrizResumo[i];
+            if (!row || !row[0]) continue;
+            const nomeCdv = String(row[0]).replace("'", '').toUpperCase().trim();
+            if (nomeCdv.startsWith('CDV ')) {
+              const disp = Number(row[1]) || 0;
+              const ofic = Number(row[2]) || 0;
+              const lib = Number(row[3]) || 0;
+              const tot = Number(row[4]) || disp + ofic + lib;
+              const pct =
+                row[5] !== undefined && row[5] !== null && !isNaN(Number(row[5]))
+                  ? Number(row[5]) <= 1
+                    ? Number(row[5]) * 100
+                    : Number(row[5])
+                  : tot > 0
+                  ? (disp / tot) * 100
+                  : 100;
+              listaResumo.push({
+                cdv: nomeCdv,
+                disponivel: disp,
+                em_oficina: ofic,
+                para_liberacao: lib,
+                total_geral: tot,
+                pct_dispo: Number(pct.toFixed(2)),
+              });
+            }
+          }
+        }
+
+        // Fallback inteligente: se a aba Resumo estiver vazia, calcula direto da aba "Posição Nacional" ou "Em Oficina"!
+        if (listaResumo.length === 0 && livro.SheetNames.includes('Posição Nacional')) {
+          const matrizPN = XLSX.utils.sheet_to_json(
+            livro.Sheets['Posição Nacional'],
+            { header: 1 }
+          );
+          const headerPN = (matrizPN[0] || []).map((h) =>
+            String(h || '').toUpperCase().trim()
+          );
+          const idxCdv = headerPN.findIndex((h) => h.includes('CDV'));
+          const idxStatusOfic = headerPN.findIndex((h) => h.includes('STATUS OFICINA'));
+
+          if (idxCdv !== -1) {
+            const agrupado = {};
+            for (let r = 1; r < matrizPN.length; r++) {
+              const row = matrizPN[r];
+              if (!row || !row[idxCdv]) continue;
+              const c = String(row[idxCdv]).toUpperCase().trim();
+              if (!c.startsWith('CDV')) continue;
+              if (!agrupado[c]) {
+                agrupado[c] = { disponivel: 0, em_oficina: 0, para_liberacao: 0, total_geral: 0 };
+              }
+              const st = idxStatusOfic !== -1 ? String(row[idxStatusOfic] || '').toUpperCase() : 'DISPON';
+              agrupado[c].total_geral += 1;
+              if (st.includes('OFICINA')) agrupado[c].em_oficina += 1;
+              else if (st.includes('LIBERA')) agrupado[c].para_liberacao += 1;
+              else agrupado[c].disponivel += 1;
+            }
+            listaResumo = Object.keys(agrupado)
+              .sort()
+              .map((c) => ({
+                cdv: c,
+                ...agrupado[c],
+                pct_dispo: Number(
+                  ((agrupado[c].disponivel / (agrupado[c].total_geral || 1)) * 100).toFixed(2)
+                ),
+              }));
+          }
+        }
+
+        setVeiculosParados(
+          listaParados.map((item, idx) => ({ id: idx + 1, ...item }))
+        );
+        if (listaParados.length > 0) {
+          setVeiculo3dSelecionado(listaParados[0]);
+        }
+        setResumoDispo(listaResumo);
+
+        const carimbo = gerarCarimboDataHoraAtual();
+        setUltimaAtuParados(carimbo);
+        localStorage.setItem('atu_parados_sul2', carimbo);
+
+        if (substituirParados) {
+          await supabase.from('veiculos_parados').delete().neq('placa', 'REMOVER_TUDO');
+          await supabase.from('resumo_disponibilidade').delete().neq('cdv', 'REMOVER_TUDO');
+        }
+        if (listaParados.length > 0) {
+          const { error: errP } = await supabase
+            .from('veiculos_parados')
+            .insert(listaParados);
+          if (errP) console.warn('Aviso veiculos_parados:', errP.message);
+        }
+        if (listaResumo.length > 0) {
+          const { error: errR } = await supabase
+            .from('resumo_disponibilidade')
+            .insert(listaResumo);
+          if (errR) console.warn('Aviso resumo_disponibilidade:', errR.message);
+        }
+
+        await fetchDados();
+        alert(
+          `✅ Planilha de Veículos Parados sincronizada no Supabase!\n🕒 Atualizado em: ${carimbo}\n- ${listaParados.length} veículos mapeados na Vitrine 3D/2D\n- ${listaResumo.length} CDVs analisados da planilha`
+        );
+      } catch (err) {
+        alert('Erro ao importar planilha: ' + err.message);
       } finally {
         setCarregando(false);
         e.target.value = '';
@@ -837,13 +2903,13 @@ function App() {
 
     let passaBusca =
       !termoBuscaGerencial ||
-      p.placa.includes(termoBuscaGerencial.toUpperCase()) ||
-      p.cdv.includes(termoBuscaGerencial.toUpperCase());
+      String(p.placa || '').includes(termoBuscaGerencial.toUpperCase()) ||
+      String(p.cdv || '').includes(termoBuscaGerencial.toUpperCase());
     return passaCard && passaBusca;
   });
 
   // ============================================================================
-  // --- ABA GERENCIAL 2: REGRAS DE TACOGRAFOS ---
+  // --- ABA GERENCIAL 2: REGRAS DE TACÓGRAFOS ---
   // ============================================================================
   const tacosDoMesHistorico = tacosFiltradosFila.filter((t) => {
     if (!t.mes_referencia) return false;
@@ -934,13 +3000,13 @@ function App() {
 
     let passaBusca =
       !termoBuscaGerencialTaco ||
-      t.placa.includes(termoBuscaGerencialTaco.toUpperCase()) ||
-      t.cdv.includes(termoBuscaGerencialTaco.toUpperCase());
+      String(t.placa || '').includes(termoBuscaGerencialTaco.toUpperCase()) ||
+      String(t.cdv || '').includes(termoBuscaGerencialTaco.toUpperCase());
     return passaCard && passaBusca;
   });
 
   // ============================================================================
-  // --- ABA GERENCIAL 3: REGRAS DE STATUS FINANCEIRO (DIVISÃO RATEIO + BASE) ---
+  // --- ABA GERENCIAL 3: REGRAS DE STATUS FINANCEIRO ---
   // ============================================================================
   const osReaisBase = finBase.filter(
     (item) =>
@@ -1082,26 +3148,31 @@ function App() {
   const totalPendenteMes = Number(linhaTotalGeralRateio.pend) || 0;
   const saldoFinalMes = Number(linhaTotalGeralRateio.saldo) || 0;
 
-  // Evolução Anual de Gastos Reais (Jan a Dez) para o Gráfico Financeiro
-  const gastosPorMesAnual = mesesDoAno.map((m) => {
-    const osMes = osReaisBase.filter((b) => Number(b.mes) === m.num);
-    const valorGasto = osMes.reduce(
-      (acc, item) => acc + (Number(item.valor_total) || 0),
-      0
-    );
-    return { ...m, valorGasto, qtdOs: osMes.length };
-  });
+  // Mapa de placas por CDV 100% dinâmico (usa Posição Nacional, Resumo de Dispo ou Placas Únicas da Base!)
+  const mapaFrotaDinamico = { ...frotaPorCdv };
+  if (Object.keys(mapaFrotaDinamico).length === 0 && resumoDispo.length > 0) {
+    resumoDispo.forEach((r) => {
+      if (r.cdv && r.total_geral > 0) {
+        mapaFrotaDinamico[String(r.cdv).toUpperCase().trim()] = Number(r.total_geral);
+      }
+    });
+  }
+  if (Object.keys(mapaFrotaDinamico).length === 0 && osReaisBase.length > 0) {
+    const setsPorCdv = {};
+    osReaisBase.forEach((b) => {
+      if (b.area === 'SUL2' && b.cdv && b.placa && b.placa !== '-') {
+        const c = String(b.cdv).toUpperCase().trim();
+        if (!setsPorCdv[c]) setsPorCdv[c] = new Set();
+        setsPorCdv[c].add(b.placa);
+      }
+    });
+    Object.keys(setsPorCdv).forEach((c) => {
+      mapaFrotaDinamico[c] = setsPorCdv[c].size;
+    });
+  }
 
-  const maxValorMesFinanceiro = Math.max(
-    ...gastosPorMesAnual.map((m) => m.valorGasto),
-    1
-  );
-
-  // ============================================================================
-  // --- CÁLCULO DO RATEIO POR CDV (POSIÇÃO NACIONAL vs GASTO REAL BASE SUL II) ---
-  // ============================================================================
   const totalPlacasSul2 =
-    Object.values(frotaPorCdv).reduce((acc, qtd) => acc + qtd, 0) || 485;
+    Object.values(mapaFrotaDinamico).reduce((acc, qtd) => acc + qtd, 0) || 1;
 
   const osDoMesSelecionado = osReaisBase.filter(
     (b) => Number(b.mes) === Number(mesSelecionadoFinanceiro)
@@ -1115,7 +3186,7 @@ function App() {
 
   const todosCdvsMes = Array.from(
     new Set([
-      ...Object.keys(frotaPorCdv),
+      ...Object.keys(mapaFrotaDinamico),
       ...osDoMesSelecionado.map((b) =>
         String(b.cdv || 'GERAL')
           .toUpperCase()
@@ -1126,7 +3197,7 @@ function App() {
 
   const analisePorCdv = todosCdvsMes
     .map((cdvNome) => {
-      const qtdPlacas = frotaPorCdv[cdvNome] || 0;
+      const qtdPlacas = mapaFrotaDinamico[cdvNome] || 0;
       const pctFrota = (qtdPlacas / totalPlacasSul2) * 100;
       const orcamentoCdv = totalOrcamentoMes * (qtdPlacas / totalPlacasSul2);
 
@@ -1141,13 +3212,10 @@ function App() {
         0
       );
 
-      // % consumido do próprio orçamento (Ex: 109.22%) e quanto passou de 100% (Ex: +9.22%)
       const pctDoOrcamento =
         orcamentoCdv > 0 ? (gastoReal / orcamentoCdv) * 100 : 0;
       const pctEstouro = orcamentoCdv > 0 ? pctDoOrcamento - 100 : 0;
       const saldoCdv = orcamentoCdv - gastoReal;
-
-      // % que este CDV representa no gasto total de todos os CDVs (Quem gasta mais)
       const shareGastoTotal = (gastoReal / totalGastoGeralMes) * 100;
 
       return {
@@ -1165,7 +3233,6 @@ function App() {
     })
     .sort((a, b) => b.gastoReal - a.gastoReal);
 
-  // Listagem de OSs da BASE (SUL II) filtrada pelo Mês, Conta, CDV clicado e Busca
   const listagemOsFinanceiroFiltrada = osReaisBase
     .filter((b) => Number(b.mes) === Number(mesSelecionadoFinanceiro))
     .filter(
@@ -1197,6 +3264,122 @@ function App() {
       );
     });
 
+  // ============================================================================
+  // --- ABA GERENCIAL 4: REGRAS DE VEÍCULOS PARADOS & RESUMO (100% DA PLANILHA) ---
+  // ============================================================================
+  // Se a tabela resumo_disponibilidade tiver dados importados da aba "Resumo", usa ela;
+  // caso contrário, calcula dinamicamente a partir dos veículos importados da aba "Em Oficina"!
+  const resumoDispoCalculado =
+    resumoDispo.length > 0
+      ? resumoDispo
+      : Array.from(
+          new Set(
+            veiculosParados
+              .map((v) => String(v.cdv || '').toUpperCase().trim())
+              .filter(Boolean)
+          )
+        )
+          .sort()
+          .map((cdvNome) => {
+            const carrosCdv = veiculosParados.filter(
+              (v) => String(v.cdv || '').toUpperCase().trim() === cdvNome
+            );
+            const disp = carrosCdv.filter((v) =>
+              String(v.disponibilidade || '').toUpperCase().includes('DISPON')
+            ).length;
+            const lib = carrosCdv.filter((v) =>
+              String(v.disponibilidade || '').toUpperCase().includes('LIBERA')
+            ).length;
+            const ofic = carrosCdv.length - disp - lib;
+            const tot = carrosCdv.length || 1;
+            return {
+              cdv: cdvNome,
+              disponivel: disp,
+              em_oficina: ofic,
+              para_liberacao: lib,
+              total_geral: carrosCdv.length,
+              pct_dispo: Number(((disp / tot) * 100).toFixed(2)),
+            };
+          });
+
+  const totalFrotaResumo = resumoDispoCalculado.reduce(
+    (acc, r) => acc + (Number(r.total_geral) || 0),
+    0
+  );
+  const totalDisponivelResumo = resumoDispoCalculado.reduce(
+    (acc, r) => acc + (Number(r.disponivel) || 0),
+    0
+  );
+  const totalOficinaResumo = resumoDispoCalculado.reduce(
+    (acc, r) => acc + (Number(r.em_oficina) || 0),
+    0
+  );
+  const totalLiberacaoResumo = resumoDispoCalculado.reduce(
+    (acc, r) => acc + (Number(r.para_liberacao) || 0),
+    0
+  );
+  const pctDispoGeral =
+    totalFrotaResumo > 0
+      ? ((totalDisponivelResumo / totalFrotaResumo) * 100).toFixed(1)
+      : '0.0';
+
+  const oficinasUnicasParados = Array.from(
+    new Set(
+      veiculosParados
+        .map((v) => String(v.oficina || '').toUpperCase().trim())
+        .filter((o) => o && o !== '--')
+    )
+  ).sort();
+
+  const zona3dAtiva = veiculo3dSelecionado
+    ? identificarZonaDefeito3D(veiculo3dSelecionado.status)
+    : identificarZonaDefeito3D('PREVENTIVA');
+
+  const listaVeiculosParadosFiltrada = veiculosParados
+    .filter((v) => {
+      if (filtroDispoParados === 'TODOS') return true;
+      return String(v.disponibilidade || '')
+        .toUpperCase()
+        .includes(filtroDispoParados);
+    })
+    .filter((v) => {
+      if (filtroCdvParados === 'TODOS') return true;
+      return String(v.cdv || '').toUpperCase() === filtroCdvParados;
+    })
+    .filter((v) => {
+      if (filtroOficinaParados === 'TODAS') return true;
+      return (
+        String(v.oficina || '').toUpperCase().trim() === filtroOficinaParados
+      );
+    })
+    .filter((v) => {
+      if (filtroZona3D === 'TODAS') return true;
+      return identificarZonaDefeito3D(v.status).id === filtroZona3D;
+    })
+    .filter((v) => {
+      if (!termoBuscaParados) return true;
+      const t = termoBuscaParados.toUpperCase();
+      return (
+        String(v.placa || '').toUpperCase().includes(t) ||
+        String(v.cdv || '').toUpperCase().includes(t) ||
+        String(v.oficina || '').toUpperCase().includes(t) ||
+        String(v.status || '').toUpperCase().includes(t) ||
+        String(v.filial || '').toUpperCase().includes(t)
+      );
+    });
+
+  const executarBuscaRapidaPlaca3D = (valorDigitado) => {
+    setBuscaPlaca3DTopo(valorDigitado);
+    const limpo = String(valorDigitado || '').toUpperCase().trim();
+    if (!limpo) return;
+    const encontrado = veiculosParados.find((v) =>
+      String(v.placa || '').toUpperCase().includes(limpo)
+    );
+    if (encontrado) {
+      setVeiculo3dSelecionado(encontrado);
+    }
+  };
+
   if (!autenticado) {
     return (
       <div className="min-h-screen bg-[#0B1329] flex flex-col items-center justify-center font-sans antialiased text-gray-100 p-4">
@@ -1209,7 +3392,7 @@ function App() {
               Painel Frota PepsiCo
             </h1>
             <p className="text-xs text-gray-400 mt-1">
-              Gestão operacional
+              Acesso à Malha Logística Assinado
             </p>
           </div>
           <form onSubmit={lidarComLogin} className="space-y-5">
@@ -1236,14 +3419,14 @@ function App() {
               type="submit"
               className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-xs uppercase py-3.5 rounded-xl shadow-md"
             >
-              Acessar
+              Autenticar Sistema
             </button>
           </form>
         </div>
         <div className="mt-8 text-center">
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
             Operado por{' '}
-            <span className="text-orange-400 font-black">Fidel Barbosa(Opentech)</span>
+            <span className="text-orange-400 font-black">Opentech</span>
           </p>
         </div>
       </div>
@@ -1271,7 +3454,12 @@ function App() {
             onChange={(e) => setFilialAtual(e.target.value)}
           >
             <option value="Todas">Visão Geral (Todas)</option>
-            {Array.from(new Set(preventivas.map((p) => p.regional)))
+            {Array.from(
+              new Set([
+                ...preventivas.map((p) => p.regional),
+                ...tacografos.map((t) => t.regional),
+              ])
+            )
               .filter(Boolean)
               .map((f) => (
                 <option key={f} value={f}>
@@ -1315,7 +3503,6 @@ function App() {
             <span>Status Tacógrafos</span>
           </button>
 
-          {/* NOVA ABA: STATUS FINANCEIRO */}
           <button
             onClick={() => setActiveTab('status_financeiro')}
             className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold transition-all ${
@@ -1333,6 +3520,23 @@ function App() {
                 {finCta.length} CTA
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('veiculos_parados')}
+            className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'veiculos_parados'
+                ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'
+                : 'text-gray-400 hover:bg-gray-800/40'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Truck size={18} className="text-cyan-400" />
+              <span>Veículos Parados (3D)</span>
+            </div>
+            <span className="bg-yellow-400 text-gray-950 text-[9px] font-black px-1.5 py-0.5 rounded-full">
+              3D/2D
+            </span>
           </button>
 
           <a
@@ -1374,12 +3578,21 @@ function App() {
           </button>
         </div>
 
+        {/* ============================================================================ */}
+        {/* --- TELA 1: FILA DE OFICINA --- */}
+        {/* ============================================================================ */}
         {activeTab === 'frota' && (
           <div className="max-w-6xl mx-auto space-y-6 animate-fadeIn">
             <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-              <h2 className="text-xl font-bold">
-                Painel Operacional Logístico
-              </h2>
+              <div>
+                <h2 className="text-xl font-bold">
+                  Painel Operacional Logístico
+                </h2>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  🕒 Preventivas: <span className="text-orange-400 font-bold">{ultimaAtuPrev}</span> • Tacógrafos:{' '}
+                  <span className="text-blue-400 font-bold">{ultimaAtuTaco}</span>
+                </p>
+              </div>
               <div className="flex p-1 rounded-xl border border-gray-800 bg-[#111A33]">
                 <button
                   onClick={() => setSubAbaFrota('preventivas')}
@@ -1395,7 +3608,7 @@ function App() {
                   onClick={() => setSubAbaFrota('tacografos')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
                     subAbaFrota === 'tacografos'
-                      ? 'bg-blue-500/10 text-[#0000FF]'
+                      ? 'bg-blue-50/10 text-[#0000FF]'
                       : 'text-gray-400'
                   }`}
                 >
@@ -1408,9 +3621,14 @@ function App() {
               <div className="space-y-6">
                 <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex justify-between items-center gap-4">
                   <div className="flex-1">
-                    <h3 className="text-sm font-black uppercase text-orange-400">
-                      🛠️ Importar Excel de preventivas
-                    </h3>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-sm font-black uppercase text-orange-400">
+                        🛠️ Importar Excel de preventivas
+                      </h3>
+                      <span className="text-[10px] bg-orange-500/15 text-orange-300 border border-orange-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                        🕒 Última atualização: {ultimaAtuPrev}
+                      </span>
+                    </div>
                     <p className="text-[11px] opacity-70 mt-1">
                       Selecione a opção abaixo para evitar placas duplicadas.
                     </p>
@@ -1441,7 +3659,7 @@ function App() {
                         className="hidden"
                       />
                     </label>
-                  </div>
+                    </div>
                 </div>
                 <div className="p-4 bg-[#111A33] border border-gray-800 rounded-xl flex items-center gap-3">
                   <Search size={18} className="text-gray-400" />
@@ -1474,11 +3692,11 @@ function App() {
                           .filter(
                             (p) =>
                               !termoBusca ||
-                              p.placa.includes(termoBusca.toUpperCase()) ||
-                              p.cdv.includes(termoBusca.toUpperCase())
+                              String(p.placa || '').includes(termoBusca.toUpperCase()) ||
+                              String(p.cdv || '').includes(termoBusca.toUpperCase())
                           )
-                          .map((p) => (
-                            <tr key={p.id} className="hover:bg-gray-800/5">
+                          .map((p, idx) => (
+                            <tr key={p.id || idx} className="hover:bg-gray-800/5">
                               <td className="p-4 font-mono font-bold">
                                 {p.placa}
                               </td>
@@ -1518,9 +3736,14 @@ function App() {
               <div className="space-y-6">
                 <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex justify-between items-center gap-4">
                   <div className="flex-1">
-                    <h3 className="text-sm font-black uppercase text-blue-400">
-                      ⏱️ Importar excel de Tacógrafos
-                    </h3>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-sm font-black uppercase text-blue-400">
+                        ⏱️ Importar excel de Tacógrafos
+                      </h3>
+                      <span className="text-[10px] bg-blue-500/15 text-blue-300 border border-blue-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                        🕒 Última atualização: {ultimaAtuTaco}
+                      </span>
+                    </div>
                     <p className="text-[11px] opacity-70 mt-1">
                       Selecione a opção abaixo para evitar placas duplicadas.
                     </p>
@@ -1584,11 +3807,11 @@ function App() {
                           .filter(
                             (t) =>
                               !termoBuscaTaco ||
-                              t.placa.includes(termoBuscaTaco.toUpperCase()) ||
-                              t.cdv.includes(termoBuscaTaco.toUpperCase())
+                              String(t.placa || '').includes(termoBuscaTaco.toUpperCase()) ||
+                              String(t.cdv || '').includes(termoBuscaTaco.toUpperCase())
                           )
-                          .map((t) => (
-                            <tr key={t.id} className="hover:bg-gray-800/5">
+                          .map((t, idx) => (
+                            <tr key={t.id || idx} className="hover:bg-gray-800/5">
                               <td className="p-4 font-mono font-bold">
                                 {t.placa}
                               </td>
@@ -1628,14 +3851,21 @@ function App() {
           </div>
         )}
 
+        {/* ============================================================================ */}
         {/* --- TELA 2: ABA STATUS PREVENTIVAS --- */}
+        {/* ============================================================================ */}
         {activeTab === 'historico_mensal' && (
           <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">
-                  Cronograma de Preventivas
-                </h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold tracking-tight text-white">
+                    Cronograma de Preventivas
+                  </h2>
+                  <span className="text-[10px] bg-orange-500/15 text-orange-300 border border-orange-500/30 px-2.5 py-1 rounded-full font-bold">
+                    🕒 Última atualização: {ultimaAtuPrev}
+                  </span>
+                </div>
                 <p className="text-gray-400 text-xs mt-0.5">
                   Indicadores operacionais e controle por mês.
                 </p>
@@ -1664,7 +3894,6 @@ function App() {
               </div>
             </div>
 
-            {/* CARDS MESTRES DE PREVENTIVAS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <div
                 onClick={() =>
@@ -1789,7 +4018,6 @@ function App() {
               </div>
             </div>
 
-            {/* GRÁFICO ESTILO PREMIUM DE PREVENTIVAS */}
             <div className="p-6 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-2xl relative overflow-hidden">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
                 <div>
@@ -1930,8 +4158,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
-                    {listagemFiltradaCardsChefe.map((p) => (
-                      <tr key={`prev-${p.id}`} className="hover:bg-gray-800/10">
+                    {listagemFiltradaCardsChefe.map((p, idx) => (
+                      <tr key={`prev-${p.id || idx}`} className="hover:bg-gray-800/10">
                         <td className="p-4 font-mono font-bold text-sm">
                           {p.placa}
                         </td>
@@ -1983,16 +4211,23 @@ function App() {
           </div>
         )}
 
-        {/* --- TELA 3: ABA STATUS TACOGRAFOS --- */}
+        {/* ============================================================================ */}
+        {/* --- TELA 3: ABA STATUS TACÓGRAFOS --- */}
+        {/* ============================================================================ */}
         {activeTab === 'status_tacografos' && (
           <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">
-                  Cronograma de Tacógrafos
-                </h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold tracking-tight text-white">
+                    Cronograma de Tacógrafos
+                  </h2>
+                  <span className="text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-full font-bold">
+                    🕒 Última atualização: {ultimaAtuTaco}
+                  </span>
+                </div>
                 <p className="text-gray-400 text-xs mt-0.5">
-                  Indicadores operacionais e controle por mês e ano.
+                  Indicadores operacionais e controle por mês e ano ({tacografos.length} veículos carregados).
                 </p>
               </div>
               <div className="flex items-center gap-2 p-2 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
@@ -2019,7 +4254,6 @@ function App() {
               </div>
             </div>
 
-            {/* CARDS MESTRES DE TACOGRAFOS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div
                 onClick={() =>
@@ -2184,7 +4418,6 @@ function App() {
               </div>
             </div>
 
-            {/* GRÁFICO ESTILO PREMIUM DE TACOGRAFOS */}
             <div className="p-6 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-2xl relative overflow-hidden">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
                 <div>
@@ -2345,9 +4578,9 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
-                    {listagemFiltradaTacosChefe.map((t) => (
+                    {listagemFiltradaTacosChefe.map((t, idx) => (
                       <tr
-                        key={`taco-ger-${t.id}`}
+                        key={`taco-ger-${t.id || idx}`}
                         className="hover:bg-gray-800/10"
                       >
                         <td className="p-4 font-mono font-bold text-sm">
@@ -2398,17 +4631,21 @@ function App() {
         )}
 
         {/* ============================================================================ */}
-        {/* --- TELA 4: NOVA ABA STATUS FINANCEIRO (DIVISÃO RATEIO + CTA + BASE) --- */}
+        {/* --- TELA 4: ABA STATUS FINANCEIRO --- */}
         {/* ============================================================================ */}
         {activeTab === 'status_financeiro' && (
           <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
-            {/* CABEÇALHO FINANCEIRO */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-800 pb-4">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                  <DollarSign className="text-rose-400" size={26} />
-                  <span>Status Financeiro & Divisão de Rateio</span>
-                </h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                    <DollarSign className="text-rose-400" size={26} />
+                    <span>Status Financeiro & Divisão de Rateio</span>
+                  </h2>
+                  <span className="text-[10px] bg-rose-500/15 text-rose-300 border border-rose-500/30 px-2.5 py-1 rounded-full font-bold">
+                    🕒 Última atualização: {ultimaAtuFin}
+                  </span>
+                </div>
                 <p className="text-gray-400 text-xs mt-0.5">
                   Leitura direta da aba "DIVISÃO RATEIO", alertas críticos "CTA", Orçamento por CDV e auditoria "BASE (SUL II)".
                 </p>
@@ -2440,7 +4677,6 @@ function App() {
               </div>
             </div>
 
-            {/* CAIXA DE IMPORTAÇÃO DA PLANILHA OS's - SUL2 */}
             <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div className="flex-1">
                 <h3 className="text-sm font-black uppercase text-rose-400">
@@ -2479,7 +4715,6 @@ function App() {
               </div>
             </div>
 
-            {/* BANNER DE ALERTA VERMELHO: ABA CTA (CALL TO ACTION) */}
             {finCta.length > 0 && (
               <div className="p-5 rounded-2xl border-2 border-red-500/60 bg-gradient-to-r from-red-950/80 via-[#1C2541] to-[#1C2541] shadow-xl relative overflow-hidden">
                 <div className="flex items-center justify-between mb-3">
@@ -2544,7 +4779,6 @@ function App() {
               </div>
             )}
 
-            {/* 4 CARDS EXECUTIVOS DO MÊS (ORÇAMENTO AOP, FATURADO NFs, PENDENTE E SALDO) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div
                 onClick={() => {
@@ -2659,9 +4893,6 @@ function App() {
               </div>
             </div>
 
-            {/* ============================================================================ */}
-            {/* --- TABELA MATRIZ OFICIAL: ABA DIVISÃO RATEIO --- */}
-            {/* ============================================================================ */}
             <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl">
               <div className="p-4 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#111A33]">
                 <div>
@@ -2676,7 +4907,7 @@ function App() {
                     )}
                   </h3>
                   <p className="text-[11px] text-gray-400">
-                    Clique em qualquer conta abaixo (ex: MANUTENÇÃO, PNEUS, SINISTRO) para filtrar as OSs correspondentes na Base.
+                    Clique em qualquer conta abaixo para filtrar as OSs correspondentes na Base.
                   </p>
                 </div>
                 {contaFiltroFinanceiro !== 'TODAS' && (
@@ -2694,23 +4925,13 @@ function App() {
                   <thead className="bg-[#0B1329] font-black text-gray-400 uppercase text-[10px] border-b border-gray-800">
                     <tr>
                       <th className="p-3.5">Conta Correção</th>
-                      <th className="p-3.5 text-right text-blue-400">
-                        AOP (Meta)
-                      </th>
+                      <th className="p-3.5 text-right text-blue-400">AOP (Meta)</th>
                       <th className="p-3.5 text-right text-indigo-400">PROV</th>
                       <th className="p-3.5 text-right text-orange-400">PEND</th>
-                      <th className="p-3.5 text-right text-emerald-400">
-                        {labelNf1}
-                      </th>
-                      <th className="p-3.5 text-right text-emerald-400">
-                        {labelNf2}
-                      </th>
-                      <th className="p-3.5 text-right text-emerald-400">
-                        {labelNf3}
-                      </th>
-                      <th className="p-3.5 text-right text-emerald-400">
-                        {labelNf4}
-                      </th>
+                      <th className="p-3.5 text-right text-emerald-400">{labelNf1}</th>
+                      <th className="p-3.5 text-right text-emerald-400">{labelNf2}</th>
+                      <th className="p-3.5 text-right text-emerald-400">{labelNf3}</th>
+                      <th className="p-3.5 text-right text-emerald-400">{labelNf4}</th>
                       <th className="p-3.5 text-right text-white">SALDO</th>
                     </tr>
                   </thead>
@@ -2783,19 +5004,16 @@ function App() {
               </div>
             </div>
 
-            {/* ============================================================================ */}
-            {/* --- NOVA SEÇÃO: ORÇAMENTO PROPORCIONAL & RANKING DE GASTO POR CDV --- */}
-            {/* ============================================================================ */}
             <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl">
               <div className="p-4 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#111A33]">
                 <div>
                   <h3 className="text-sm font-black uppercase text-white flex items-center gap-2">
                     <span>
-                      🏢 Desempenho Orçamentário & Ranking por CDV ({totalPlacasSul2} Placas SUL2)
+                      🏢 Desempenho Orçamentário & Ranking por CDV ({totalPlacasSul2 > 1 ? `${totalPlacasSul2} Placas` : 'Análise Dinâmica'})
                     </span>
                   </h3>
                   <p className="text-[11px] text-gray-400">
-                    Comparativo entre o Orçamento Proporcional por frota (Posição Nacional) vs. Gasto Real (BASE SUL II). Clique em um CDV para auditar suas OSs.
+                    Comparativo entre o Orçamento Proporcional por frota da planilha vs. Gasto Real (BASE SUL II).
                   </p>
                 </div>
                 {cdvFiltroFinanceiro !== 'TODOS' && (
@@ -2815,19 +5033,11 @@ function App() {
                       <th className="p-3.5">Ranking / CDV</th>
                       <th className="p-3.5 text-center">Placas</th>
                       <th className="p-3.5 text-right">% Frota</th>
-                      <th className="p-3.5 text-right text-blue-400">
-                        Orçamento (Teto)
-                      </th>
-                      <th className="p-3.5 text-right text-amber-400">
-                        Gasto Real (Mês)
-                      </th>
+                      <th className="p-3.5 text-right text-blue-400">Orçamento (Teto)</th>
+                      <th className="p-3.5 text-right text-amber-400">Gasto Real (Mês)</th>
                       <th className="p-3.5 text-center">% do Orçamento</th>
-                      <th className="p-3.5 text-right">
-                        Estouro / Economia (%)
-                      </th>
-                      <th className="p-3.5 w-44">
-                        Peso no Gasto Geral (Quem gasta +)
-                      </th>
+                      <th className="p-3.5 text-right">Estouro / Economia (%)</th>
+                      <th className="p-3.5 w-44">Peso no Gasto Geral</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
@@ -2939,85 +5149,6 @@ function App() {
               </div>
             </div>
 
-            {/* GRÁFICO ANUAL DE DESPESAS POR MÊS (ESTILO PREMIUM) */}
-            <div className="p-6 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-2xl relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
-                <div>
-                  <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                    <span>📊 Evolução Mensal de OSs (BASE SUL II)</span>
-                  </h3>
-                  <p className="text-xs text-gray-400">
-                    Volume financeiro de OSs por mês em 2026 (Clique em uma barra para auditar o mês)
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 bg-[#0B1329] p-1.5 rounded-xl border border-gray-800">
-                  <span className="text-[10px] font-bold text-gray-400 px-2 uppercase">
-                    Ano 2026
-                  </span>
-                </div>
-              </div>
-
-              <div className="relative pt-6 pb-2">
-                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20 border-b border-gray-700">
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                </div>
-
-                <div className="h-48 flex items-end justify-between gap-1.5 sm:gap-2 px-2 relative z-10">
-                  {gastosPorMesAnual.map((item) => {
-                    const estaSelecionado =
-                      Number(mesSelecionadoFinanceiro) === item.num;
-                    const alturaPct = Math.max(
-                      (item.valorGasto / maxValorMesFinanceiro) * 100,
-                      4
-                    );
-
-                    return (
-                      <div
-                        key={item.num}
-                        onClick={() => setMesSelecionadoFinanceiro(item.num)}
-                        className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group"
-                      >
-                        <span
-                          className={`text-[9px] font-black mb-1 transition-all ${
-                            estaSelecionado
-                              ? 'text-rose-400 scale-110'
-                              : 'text-gray-400 group-hover:text-white'
-                          }`}
-                        >
-                          {item.valorGasto > 0
-                            ? `${(item.valorGasto / 1000).toFixed(0)}k`
-                            : ''}
-                        </span>
-
-                        <div
-                          className={`w-full max-w-[36px] rounded-t-lg transition-all duration-300 ${
-                            estaSelecionado
-                              ? 'bg-gradient-to-t from-rose-600 via-orange-500 to-amber-300 ring-2 ring-rose-400 shadow-lg shadow-rose-500/30'
-                              : 'bg-gradient-to-t from-rose-900/60 via-orange-600/70 to-amber-500/80 group-hover:from-rose-600 group-hover:to-amber-400'
-                          }`}
-                          style={{ height: `${alturaPct}%` }}
-                        ></div>
-
-                        <span
-                          className={`mt-3 text-[11px] font-bold uppercase transition-all ${
-                            estaSelecionado
-                              ? 'text-rose-400 font-black'
-                              : 'text-gray-400 group-hover:text-white'
-                          }`}
-                        >
-                          {item.sigla}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* BARRA DE PESQUISA E AUDITORIA DE ORDENS DE SERVIÇO (BASE SUL II) */}
             <div className="p-4 rounded-xl border border-gray-800 bg-[#111A33] flex items-center gap-3">
               <Search size={18} className="text-gray-400" />
               <input
@@ -3027,17 +5158,8 @@ function App() {
                 placeholder="Pesquisar OS por Placa, Número da OS, CDV, Oficina ou NF..."
                 className="bg-transparent w-full outline-none text-xs text-white"
               />
-              {termoBuscaFinanceiro && (
-                <button
-                  onClick={() => setTermoBuscaFinanceiro('')}
-                  className="text-xs text-gray-400 hover:text-white font-bold"
-                >
-                  Limpar
-                </button>
-              )}
             </div>
 
-            {/* TABELA DETALHADA DE ORDENS DE SERVIÇO (ABA BASE SUL II) */}
             <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
               <div className="p-4 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-gray-500/5">
                 <div className="font-bold text-xs uppercase text-gray-400">
@@ -3048,10 +5170,6 @@ function App() {
                   | CDV:{' '}
                   <span className="text-blue-400 font-black">
                     {cdvFiltroFinanceiro}
-                  </span>{' '}
-                  | Filtro NF:{' '}
-                  <span className="text-amber-400 font-black">
-                    {nfFiltroFinanceiro}
                   </span>{' '}
                   ({listagemOsFinanceiroFiltrada.length} OSs)
                 </div>
@@ -3081,8 +5199,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
-                    {listagemOsFinanceiroFiltrada.slice(0, 300).map((b) => (
-                      <tr key={b.id} className="hover:bg-gray-800/20">
+                    {listagemOsFinanceiroFiltrada.slice(0, 300).map((b, idx) => (
+                      <tr key={b.id || idx} className="hover:bg-gray-800/20">
                         <td className="p-3.5 font-mono text-gray-300 font-bold">
                           {b.os}
                         </td>
@@ -3132,9 +5250,586 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* ============================================================================ */}
+        {/* --- TELA 5: ABA VEÍCULOS PARADOS + VITRINE 3D/2D (100% DA PLANILHA/BANCO) --- */}
+        {/* ============================================================================ */}
+        {activeTab === 'veiculos_parados' && (
+          <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
+            {/* CABEÇALHO */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-800 pb-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                    <Truck className="text-cyan-400" size={26} />
+                    <span>Disponibilidade & Vitrine 3D/2D (VW 8.120)</span>
+                  </h2>
+                  <span className="text-[10px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-full font-bold">
+                    🕒 Última atualização: {ultimaAtuParados}
+                  </span>
+                </div>
+                <p className="text-gray-400 text-xs mt-0.5">
+                  Leitura 100% dinâmica da planilha "Controle de Veículos Parados" (Abas "Em Oficina" e "Resumo") integrada ao Supabase.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={limparTodaTabelaParados}
+                  className="bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+                >
+                  <Trash2 size={14} /> Limpar Banco
+                </button>
+                <label className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer flex items-center gap-2 transition-all shadow-lg shadow-cyan-600/20">
+                  <Upload size={14} />
+                  Carregar Excel Parados
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    onChange={lidarComImportacaoVeiculosParados}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* BARRA DE COMANDO: BUSCADOR POR PLACA + DROPDOWN DE OFICINAS + SELETOR DE VEÍCULO */}
+            <div className="p-4 rounded-2xl border border-gray-800 bg-[#1C2541] grid grid-cols-1 md:grid-cols-3 gap-3 items-center shadow-lg">
+              <div className="flex items-center gap-2.5 bg-[#0B1329] border border-gray-700 focus-within:border-cyan-400 px-3.5 py-2 rounded-xl">
+                <Search size={16} className="text-cyan-400 shrink-0" />
+                <input
+                  type="text"
+                  value={buscaPlaca3DTopo}
+                  onChange={(e) => executarBuscaRapidaPlaca3D(e.target.value)}
+                  placeholder="Digitar Placa p/ Inspecionar no 3D/2D..."
+                  className="bg-transparent w-full outline-none text-xs font-mono font-bold text-white uppercase"
+                />
+                {buscaPlaca3DTopo && (
+                  <button
+                    onClick={() => setBuscaPlaca3DTopo('')}
+                    className="text-[10px] text-gray-400 hover:text-white font-black"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#0B1329] border border-gray-700 px-3.5 py-2 rounded-xl">
+                <Building2 size={16} className="text-amber-400 shrink-0" />
+                <div className="w-full">
+                  <span className="text-[9px] font-black text-gray-400 uppercase block leading-none">
+                    Filtrar por Oficina
+                  </span>
+                  <select
+                    value={filtroOficinaParados}
+                    onChange={(e) => setFiltroOficinaParados(e.target.value)}
+                    className="w-full bg-transparent text-xs font-black text-white uppercase outline-none cursor-pointer mt-0.5"
+                  >
+                    <option value="TODAS" className="bg-[#0B1329] text-white">
+                      Todas as Oficinas ({oficinasUnicasParados.length})
+                    </option>
+                    {oficinasUnicasParados.map((ofic) => (
+                      <option key={ofic} value={ofic} className="bg-[#0B1329] text-white">
+                        🏢 {ofic}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#0B1329] border border-cyan-500/40 px-3.5 py-2 rounded-xl">
+                <Truck size={16} className="text-cyan-400 shrink-0" />
+                <div className="w-full">
+                  <span className="text-[9px] font-black text-cyan-400 uppercase block leading-none">
+                    Veículo em Foco na Vitrine
+                  </span>
+                  <select
+                    value={veiculo3dSelecionado?.placa || ''}
+                    onChange={(e) => {
+                      const achado = veiculosParados.find(
+                        (v) => v.placa === e.target.value
+                      );
+                      if (achado) setVeiculo3dSelecionado(achado);
+                    }}
+                    className="w-full bg-transparent text-xs font-black text-white uppercase outline-none cursor-pointer mt-0.5"
+                  >
+                    {veiculosParados.length === 0 ? (
+                      <option value="" className="bg-[#0B1329] text-gray-400">
+                        Carregue a planilha de Veículos Parados...
+                      </option>
+                    ) : (
+                      veiculosParados.map((v, i) => (
+                        <option key={`${v.placa}-${i}`} value={v.placa} className="bg-[#0B1329] text-white">
+                          {v.placa} — {v.status ? v.status.slice(0, 24) : 'Diagnóstico'}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 CARDS DE DISPONIBILIDADE GERAL (CALCULADOS DA PLANILHA) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div
+                onClick={() => setFiltroDispoParados('TODOS')}
+                className="p-4 rounded-xl border border-gray-800 cursor-pointer bg-gradient-to-br from-blue-600 to-indigo-700 text-white"
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-[11px] font-black uppercase">FROTA TOTAL MAPEADA</span>
+                  <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-bold">ABA RESUMO</span>
+                </div>
+                <h3 className="text-3xl font-black mt-3">
+                  {totalFrotaResumo} <span className="text-xs font-normal opacity-80">Veículos</span>
+                </h3>
+              </div>
+
+              <div
+                onClick={() =>
+                  setFiltroDispoParados(
+                    filtroDispoParados === 'DISPON' ? 'TODOS' : 'DISPON'
+                  )
+                }
+                className={`p-4 rounded-xl border border-gray-800 cursor-pointer transition-all ${
+                  filtroDispoParados === 'DISPON' ? 'ring-4 ring-emerald-400' : ''
+                } bg-gradient-to-br from-emerald-600 to-green-700 text-white`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-[11px] font-black uppercase">DISPONÍVEIS RODANDO</span>
+                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-black">
+                    {pctDispoGeral}% DISPO
+                  </span>
+                </div>
+                <h3 className="text-3xl font-black mt-3">
+                  {totalDisponivelResumo} <span className="text-xs font-normal opacity-80">Placas</span>
+                </h3>
+              </div>
+
+              <div
+                onClick={() =>
+                  setFiltroDispoParados(
+                    filtroDispoParados === 'OFICINA' ? 'TODOS' : 'OFICINA'
+                  )
+                }
+                className={`p-4 rounded-xl border border-gray-800 cursor-pointer transition-all ${
+                  filtroDispoParados === 'OFICINA' ? 'ring-4 ring-red-400' : ''
+                } bg-gradient-to-br from-rose-600 to-red-700 text-white`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-[11px] font-black uppercase">PARADOS EM OFICINA</span>
+                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
+                    {totalFrotaResumo > 0
+                      ? ((totalOficinaResumo / totalFrotaResumo) * 100).toFixed(1)
+                      : '0.0'}
+                    %
+                  </span>
+                </div>
+                <h3 className="text-3xl font-black mt-3">
+                  {totalOficinaResumo} <span className="text-xs font-normal opacity-80">Placas</span>
+                </h3>
+              </div>
+
+              <div
+                onClick={() =>
+                  setFiltroDispoParados(
+                    filtroDispoParados === 'LIBERA' ? 'TODOS' : 'LIBERA'
+                  )
+                }
+                className={`p-4 rounded-xl border border-gray-800 cursor-pointer transition-all ${
+                  filtroDispoParados === 'LIBERA' ? 'ring-4 ring-amber-400' : ''
+                } bg-gradient-to-br from-amber-500 to-orange-600 text-white`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-[11px] font-black uppercase">P/ LIBERAÇÃO IMEDIATA</span>
+                  <span className="text-[9px] bg-black/20 px-1.5 py-0.5 rounded font-black">PRONTOS</span>
+                </div>
+                <h3 className="text-3xl font-black mt-3">
+                  {totalLiberacaoResumo} <span className="text-xs font-normal opacity-80">Placa(s)</span>
+                </h3>
+              </div>
+            </div>
+
+            {/* VITRINE 3D/2D + FICHA DE TELEMETRIA LATERAL */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <VitrineCaminhao3D
+                veiculo={veiculo3dSelecionado}
+                zonaAtiva={zona3dAtiva}
+                filtroZona3D={filtroZona3D}
+                setFiltroZona3D={setFiltroZona3D}
+              />
+
+              <div className="lg:col-span-4 rounded-2xl border border-gray-800 bg-[#1C2541] p-5 shadow-xl flex flex-col justify-between space-y-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+                    <div>
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">
+                        Laudo de Telemetria Mecânica
+                      </span>
+                      <h4 className="text-2xl font-mono font-black text-white mt-0.5">
+                        {veiculo3dSelecionado?.placa || 'SEM PLACA'}
+                      </h4>
+                    </div>
+                    {veiculo3dSelecionado && (
+                      <span
+                        className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase ${
+                          String(veiculo3dSelecionado.disponibilidade)
+                            .toUpperCase()
+                            .includes('DISPON')
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : String(veiculo3dSelecionado.disponibilidade)
+                                .toUpperCase()
+                                .includes('LIBERA')
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        }`}
+                      >
+                        {veiculo3dSelecionado.disponibilidade}
+                      </span>
+                    )}
+                  </div>
+
+                  <div
+                    className="p-3.5 rounded-xl border"
+                    style={{
+                      backgroundColor: `${zona3dAtiva.cor}15`,
+                      borderColor: `${zona3dAtiva.cor}50`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-black text-white shrink-0"
+                        style={{ backgroundColor: zona3dAtiva.cor }}
+                      >
+                        {zona3dAtiva.simbolo}
+                      </span>
+                      <div>
+                        <span className="text-[10px] font-black uppercase opacity-75 block">
+                          Sistema Afetado (3D / 2D)
+                        </span>
+                        <h5 className="text-sm font-black text-white">
+                          {zona3dAtiva.nome}
+                        </h5>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-gray-300 mt-2 leading-relaxed">
+                      {zona3dAtiva.descricao}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                      <span className="text-gray-400 font-bold">Diagnóstico / Falha:</span>
+                      <span className="font-black text-amber-400 text-right max-w-[180px]">
+                        {veiculo3dSelecionado?.status || 'Carregue a planilha'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                      <span className="text-gray-400 font-bold">CDV / Unidade:</span>
+                      <span className="font-black text-blue-400">
+                        {veiculo3dSelecionado
+                          ? `${veiculo3dSelecionado.cdv} (${veiculo3dSelecionado.filial})`
+                          : '--'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                      <span className="text-gray-400 font-bold">Oficina Responsável:</span>
+                      <span className="font-bold text-white">
+                        {veiculo3dSelecionado?.oficina || '--'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                      <span className="text-gray-400 font-bold">Ordem de Serviço (OS):</span>
+                      <span className="font-mono font-bold text-gray-200">
+                        {veiculo3dSelecionado?.os || '--'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                      <span className="text-gray-400 font-bold">Orçamento Estimado:</span>
+                      <span className="font-mono font-black text-rose-400">
+                        {veiculo3dSelecionado?.valor > 0
+                          ? formatarMoeda(veiculo3dSelecionado.valor)
+                          : 'Aguardando Orçamento'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0B1329] border border-gray-800 text-center">
+                  <span className="text-[10px] font-black uppercase text-gray-400 block">
+                    Disponibilidade Geral SUL2
+                  </span>
+                  <div className="text-2xl font-black text-emerald-400 mt-1">
+                    {pctDispoGeral}% <span className="text-xs text-gray-400 font-bold">Operacional</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* TABELA DE DISPONIBILIDADE POR CDV (LIDA DA ABA RESUMO / PLANILHA) */}
+            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl">
+              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-[#111A33]">
+                <div>
+                  <h3 className="text-sm font-black uppercase text-white">
+                    📊 Resumo de Disponibilidade Operacional por CDV ({resumoDispoCalculado.length} Unidades)
+                  </h3>
+                  <p className="text-[11px] text-gray-400">
+                    Extraído automaticamente da planilha importada. Clique em um CDV para filtrar os veículos abaixo.
+                  </p>
+                </div>
+                {filtroCdvParados !== 'TODOS' && (
+                  <button
+                    onClick={() => setFiltroCdvParados('TODOS')}
+                    className="text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-3 py-1 rounded-lg"
+                  >
+                    Mostrar Todos CDVs ({filtroCdvParados}) ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs table-auto">
+                  <thead className="bg-[#0B1329] font-black text-gray-400 uppercase text-[10px] border-b border-gray-800">
+                    <tr>
+                      <th className="p-3.5">CDV Logístico</th>
+                      <th className="p-3.5 text-center text-emerald-400">Disponível</th>
+                      <th className="p-3.5 text-center text-rose-400">Em Oficina</th>
+                      <th className="p-3.5 text-center text-amber-400">P/ Liberação</th>
+                      <th className="p-3.5 text-center text-white">Total Frota</th>
+                      <th className="p-3.5 w-56">% Disponibilidade</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {resumoDispoCalculado.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-gray-400 font-bold">
+                          Nenhum resumo carregado. Clique em "Carregar Excel Parados" no topo para analisar sua planilha.
+                        </td>
+                      </tr>
+                    ) : (
+                      resumoDispoCalculado.map((r, i) => {
+                        const selecionado = filtroCdvParados === r.cdv;
+                        const pct = Number(r.pct_dispo) || 0;
+
+                        // Regra das 4 faixas de cores (Azul = 100%, Verde = 95-99.9%, Amarelo = 90-94.9%, Vermelho < 90%)
+                        let corBarra = 'bg-gradient-to-r from-red-600 to-rose-500';
+                        let corTexto = 'text-red-400';
+                        let corLuz = 'bg-red-500 shadow-[0_0_8px_#ef4444]';
+
+                        if (pct >= 100) {
+                          corBarra = 'bg-gradient-to-r from-blue-500 to-cyan-400';
+                          corTexto = 'text-cyan-400';
+                          corLuz = 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]';
+                        } else if (pct >= 95) {
+                          corBarra = 'bg-gradient-to-r from-emerald-500 to-green-400';
+                          corTexto = 'text-emerald-400';
+                          corLuz = 'bg-emerald-400 shadow-[0_0_8px_#34d399]';
+                        } else if (pct >= 90) {
+                          corBarra = 'bg-gradient-to-r from-amber-500 to-yellow-400';
+                          corTexto = 'text-yellow-400';
+                          corLuz = 'bg-yellow-400 shadow-[0_0_8px_#facc15]';
+                        }
+
+                        return (
+                          <tr
+                            key={i}
+                            onClick={() =>
+                              setFiltroCdvParados(selecionado ? 'TODOS' : r.cdv)
+                            }
+                            className={`cursor-pointer transition-all ${
+                              selecionado
+                                ? 'bg-cyan-500/20 border-l-4 border-cyan-400'
+                                : 'hover:bg-gray-800/30'
+                            }`}
+                          >
+                            <td className="p-3.5 font-black text-white uppercase">
+                              {r.cdv}
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-bold text-emerald-400">
+                              {r.disponivel}
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-black text-rose-400">
+                              {r.em_oficina || 0}
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-bold text-amber-400">
+                              {r.para_liberacao || 0}
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-black text-white">
+                              {r.total_geral}
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex items-center gap-2.5">
+                                <span
+                                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${corLuz}`}
+                                />
+                                <div className="flex-1 h-2 bg-[#0B1329] rounded-full overflow-hidden border border-gray-800">
+                                  <div
+                                    className={`h-full rounded-full ${corBarra}`}
+                                    style={{ width: `${Math.min(pct, 100)}%` }}
+                                  ></div>
+                                </div>
+                                <span
+                                  className={`font-mono text-xs font-black w-14 text-right ${corTexto}`}
+                                >
+                                  {pct.toFixed(1)}%
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* BARRA DE PESQUISA GERAL DA TABELA DE VEÍCULOS PARADOS */}
+            <div className="p-4 rounded-xl border border-gray-800 bg-[#111A33] flex items-center gap-3">
+              <Search size={18} className="text-gray-400" />
+              <input
+                type="text"
+                value={termoBuscaParados}
+                onChange={(e) => setTermoBuscaParados(e.target.value)}
+                placeholder="Pesquisar na lista abaixo por Placa, Problema Mecânico, Oficina, Filial ou CDV..."
+                className="bg-transparent w-full outline-none text-xs text-white"
+              />
+              {(termoBuscaParados ||
+                filtroOficinaParados !== 'TODAS' ||
+                filtroZona3D !== 'TODAS' ||
+                filtroCdvParados !== 'TODOS' ||
+                filtroDispoParados !== 'TODOS') && (
+                <button
+                  onClick={() => {
+                    setTermoBuscaParados('');
+                    setFiltroOficinaParados('TODAS');
+                    setFiltroZona3D('TODAS');
+                    setFiltroCdvParados('TODOS');
+                    setFiltroDispoParados('TODOS');
+                  }}
+                  className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3 py-1 rounded-lg shrink-0"
+                >
+                  Limpar Todos Filtros ✕
+                </button>
+              )}
+            </div>
+
+            {/* LISTA COMPLETA DE VEÍCULOS PARADOS / EM OFICINA */}
+            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
+              <div className="p-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-2 bg-gray-500/5">
+                <div className="font-bold text-xs uppercase text-gray-400">
+                  Veículos da Planilha ({listaVeiculosParadosFiltrada.length} Placas) • Oficina:{' '}
+                  <span className="text-amber-400 font-black">{filtroOficinaParados}</span> • Sistema:{' '}
+                  <span className="text-cyan-400 font-black">{filtroZona3D}</span>
+                </div>
+                <span className="text-[11px] text-yellow-400 font-black">
+                  💡 Clique em qualquer placa abaixo para ver a peça afetada brilhar em Neon no 3D/2D
+                </span>
+              </div>
+
+              <div className="max-h-[500px] overflow-y-auto">
+                <table className="w-full text-left text-xs table-auto">
+                  <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
+                    <tr>
+                      <th className="p-3.5">Placa</th>
+                      <th className="p-3.5">Filial</th>
+                      <th className="p-3.5">CDV</th>
+                      <th className="p-3.5">Oficina</th>
+                      <th className="p-3.5">Sistema (3D/2D)</th>
+                      <th className="p-3.5">Diagnóstico / Status</th>
+                      <th className="p-3.5">Ordem de Serviço</th>
+                      <th className="p-3.5 text-right">Orçamento (R$)</th>
+                      <th className="p-3.5 text-center">Situação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {listaVeiculosParadosFiltrada.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-8 text-center text-gray-400 font-bold">
+                          Nenhum veículo encontrado. Suba o arquivo "Controle de Veículos Parados.xlsx" no botão azul acima.
+                        </td>
+                      </tr>
+                    ) : (
+                      listaVeiculosParadosFiltrada.map((v, index) => {
+                        const zona = identificarZonaDefeito3D(v.status);
+                        const isSelected = veiculo3dSelecionado?.placa === v.placa;
+
+                        return (
+                          <tr
+                            key={`${v.placa}-${index}`}
+                            onClick={() => setVeiculo3dSelecionado(v)}
+                            className={`cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-cyan-500/20 border-l-4 border-cyan-400'
+                                : 'hover:bg-gray-800/30'
+                            }`}
+                          >
+                            <td className="p-3.5 font-mono font-black text-sm text-white">
+                              {v.placa}
+                            </td>
+                            <td className="p-3.5 uppercase text-gray-300 font-semibold">
+                              {v.filial}
+                            </td>
+                            <td className="p-3.5 uppercase text-blue-400 font-bold">
+                              {v.cdv}
+                            </td>
+                            <td className="p-3.5 uppercase text-gray-300 font-bold">
+                              {v.oficina}
+                            </td>
+                            <td className="p-3.5">
+                              <span
+                                className="text-[10px] font-black px-2 py-0.5 rounded border inline-flex items-center gap-1.5"
+                                style={{
+                                  backgroundColor: `${zona.cor}20`,
+                                  borderColor: `${zona.cor}50`,
+                                  color: '#fff',
+                                }}
+                              >
+                                <span
+                                  className="w-2 h-2 rounded-full"
+                                  style={{ backgroundColor: zona.cor }}
+                                />
+                                <span>{zona.id}</span>
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-bold text-amber-300">
+                              {v.status || 'Em diagnóstico'}
+                            </td>
+                            <td className="p-3.5 font-mono text-gray-300">
+                              {v.os || '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono font-black text-white">
+                              {v.valor > 0 ? formatarMoeda(v.valor) : '--'}
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span
+                                className={`text-[10px] font-black px-2.5 py-1 rounded uppercase ${
+                                  String(v.disponibilidade)
+                                    .toUpperCase()
+                                    .includes('DISPON')
+                                    ? 'bg-emerald-500/15 text-emerald-400'
+                                    : String(v.disponibilidade)
+                                        .toUpperCase()
+                                        .includes('LIBERA')
+                                    ? 'bg-amber-500/15 text-amber-400'
+                                    : 'bg-rose-500/15 text-rose-400'
+                                }`}
+                              >
+                                {v.disponibilidade}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
 }
 
-export default App; 
+export default App;
