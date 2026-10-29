@@ -17,6 +17,8 @@ import {
   Building2,
   Box,
   Layers,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 const LINK_POWER_BI = 'https://app.powerbi.com';
@@ -1816,7 +1818,7 @@ function formatarCreatedAtBanco(isoStr) {
 }
 
 // ============================================================================
-// --- COMPONENTE PRINCIPAL ---
+// --- COMPONENTE PRINCIPAL (MODO COCKPIT WIDESCREEN ZERO-SCROLL) ---
 // ============================================================================
 function App() {
   const mesesDoAno = [
@@ -1840,12 +1842,19 @@ function App() {
   const [senhaInput, setSenhaInput] = useState('');
   const [erroLogin, setErroLogin] = useState('');
 
-  // --- ESTADOS GERAIS ---
+  // --- ESTADOS GERAIS & COCKPIT WIDESCREEN ---
   const [activeTab, setActiveTab] = useState('frota');
   const [filialAtual, setFilialAtual] = useState('Todas');
   const [subAbaFrota, setSubAbaFrota] = useState('preventivas');
   const [carregando, setCarregando] = useState(false);
   const [rotacionar, setRotacionar] = useState(false);
+
+  // Controles de Layout Zero-Scroll (Sidebar Retrátil e Gavetas)
+  const [sidebarAberta, setSidebarAberta] = useState(false);
+  const [mostrarGavetaUploadFin, setMostrarGavetaUploadFin] = useState(false);
+  const [mostrarCtaExpandido, setMostrarCtaExpandido] = useState(false);
+  const [subVisaoFinanceiro, setSubVisaoFinanceiro] = useState('MATRIZES'); // 'MATRIZES' | 'AUDITORIA_OS'
+  const [abaLateralParados, setAbaLateralParados] = useState('PLACAS'); // 'PLACAS' | 'RESUMO_CDV' | 'LAUDO'
 
   // --- CARIMBOS DE ÚLTIMA ATUALIZAÇÃO DOS 4 MÓDULOS ---
   const [ultimaAtuPrev, setUltimaAtuPrev] = useState(
@@ -1885,7 +1894,7 @@ function App() {
   const [nfFiltroFinanceiro, setNfFiltroFinanceiro] = useState('TODAS');
   const [cdvFiltroFinanceiro, setCdvFiltroFinanceiro] = useState('TODOS');
 
-  // --- ESTADOS DA ABA: VEÍCULOS PARADOS & RESUMO (100% VINDOS DO BANCO/PLANILHA!) ---
+  // --- ESTADOS DE VEÍCULOS PARADOS & RESUMO (PERSISTÊNCIA DUPLA: CACHE + SUPABASE) ---
   const [veiculosParados, setVeiculosParados] = useState(() => {
     try {
       const salvo = localStorage.getItem('cache_veiculos_parados_sul2');
@@ -1960,13 +1969,9 @@ function App() {
         .from('preventivas')
         .select('*')
         .order('placa', { ascending: true });
-      if (prevData) {
+      if (prevData && prevData.length > 0) {
         setPreventivas(prevData);
-        if (
-          prevData.length > 0 &&
-          prevData[0].created_at &&
-          !localStorage.getItem('atu_prev_sul2')
-        ) {
+        if (prevData[0].created_at && !localStorage.getItem('atu_prev_sul2')) {
           setUltimaAtuPrev(formatarCreatedAtBanco(prevData[0].created_at));
         }
       }
@@ -1986,8 +1991,8 @@ function App() {
         .from('financeiro_rateio')
         .select('*')
         .order('id', { ascending: true });
-      setFinRateio(rateioData || []);
       if (rateioData && rateioData.length > 0) {
+        setFinRateio(rateioData);
         if (rateioData[0].mes)
           setMesSelecionadoFinanceiro(Number(rateioData[0].mes));
         if (rateioData[0].created_at && !localStorage.getItem('atu_fin_sul2')) {
@@ -2007,16 +2012,18 @@ function App() {
         .order('id', { ascending: true });
       if (paradosData && paradosData.length > 0) {
         setVeiculosParados(paradosData);
-        if (paradosData.length > 0) {
-          setVeiculo3dSelecionado((atual) => atual || paradosData[0]);
-          if (
-            paradosData[0].created_at &&
-            !localStorage.getItem('atu_parados_sul2')
-          ) {
-            setUltimaAtuParados(
-              formatarCreatedAtBanco(paradosData[0].created_at)
-            );
-          }
+        localStorage.setItem(
+          'cache_veiculos_parados_sul2',
+          JSON.stringify(paradosData)
+        );
+        setVeiculo3dSelecionado((atual) => atual || paradosData[0]);
+        if (
+          paradosData[0].created_at &&
+          !localStorage.getItem('atu_parados_sul2')
+        ) {
+          setUltimaAtuParados(
+            formatarCreatedAtBanco(paradosData[0].created_at)
+          );
         }
       }
 
@@ -2026,6 +2033,10 @@ function App() {
         .order('id', { ascending: true });
       if (resDispoData && resDispoData.length > 0) {
         setResumoDispo(resDispoData);
+        localStorage.setItem(
+          'cache_resumo_dispo_sul2',
+          JSON.stringify(resDispoData)
+        );
       }
 
       let todasBase = [];
@@ -2042,7 +2053,7 @@ function App() {
         if (lote.length < passo) break;
         de += passo;
       }
-      setFinBase(todasBase);
+      if (todasBase.length > 0) setFinBase(todasBase);
     } catch (error) {
       console.error('Erro na sincronização:', error.message);
     } finally {
@@ -2057,7 +2068,7 @@ function App() {
       setAutenticado(true);
       setErroLogin('');
     } else {
-      setErroLogin('Usuário ou senha inválidos operacionalmente!');
+      setErroLogin('Login ou senha inválidos!');
     }
   };
 
@@ -2065,7 +2076,7 @@ function App() {
   const limparTodaTabelaPreventivas = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de preventivas no Supabase. Tem certeza absoluta?'
+        '⚠️ CUIDADO: Vai apagar TODOS os registos da tabela de preventivas no Supabase. Tem a certeza absoluta?'
       )
     ) {
       setCarregando(true);
@@ -2077,7 +2088,6 @@ function App() {
         if (error) throw error;
         setPreventivas([]);
         alert('Tabela de preventivas completamente limpa!');
-        fetchDados();
       } catch (err) {
         alert('Erro ao limpar banco: ' + err.message);
       } finally {
@@ -2089,7 +2099,7 @@ function App() {
   const limparTodaTabelaTacografos = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros da tabela de tacógrafos no Supabase. Tem certeza absoluta?'
+        '⚠️ CUIDADO: Vai apagar TODOS os registos da tabela de tacógrafos no Supabase. Tem a certeza absoluta?'
       )
     ) {
       setCarregando(true);
@@ -2101,7 +2111,6 @@ function App() {
         if (error) throw error;
         setTacografos([]);
         alert('Tabela de tacógrafos completamente limpa!');
-        fetchDados();
       } catch (err) {
         alert('Erro ao limpar banco: ' + err.message);
       } finally {
@@ -2113,19 +2122,27 @@ function App() {
   const limparTodaTabelaFinanceiro = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros Financeiros no Supabase. Tem certeza absoluta?'
+        '⚠️ CUIDADO: Vai apagar TODOS os registos Financeiros no Supabase. Tem a certeza absoluta?'
       )
     ) {
       setCarregando(true);
       try {
-        await supabase.from('financeiro_rateio').delete().neq('conta', 'REMOVER_TUDO');
-        await supabase.from('financeiro_cta').delete().neq('placa', 'REMOVER_TUDO');
-        await supabase.from('financeiro_base').delete().neq('os', 'REMOVER_TUDO');
+        await supabase
+          .from('financeiro_rateio')
+          .delete()
+          .neq('conta', 'REMOVER_TUDO');
+        await supabase
+          .from('financeiro_cta')
+          .delete()
+          .neq('placa', 'REMOVER_TUDO');
+        await supabase
+          .from('financeiro_base')
+          .delete()
+          .neq('os', 'REMOVER_TUDO');
         setFinRateio([]);
         setFinCta([]);
         setFinBase([]);
         alert('Tabelas financeiras completamente limpas!');
-        fetchDados();
       } catch (err) {
         alert('Erro ao limpar banco financeiro: ' + err.message);
       } finally {
@@ -2137,18 +2154,25 @@ function App() {
   const limparTodaTabelaParados = async () => {
     if (
       confirm(
-        '⚠️ CUIDADO: Você vai apagar TODOS os registros de Veículos Parados e Resumo de Disponibilidade no Supabase. Tem certeza?'
+        '⚠️ CUIDADO: Vai apagar TODOS os registos de Veículos Parados e Resumo de Disponibilidade. Tem a certeza?'
       )
     ) {
       setCarregando(true);
       try {
-        await supabase.from('veiculos_parados').delete().neq('placa', 'REMOVER_TUDO');
-        await supabase.from('resumo_disponibilidade').delete().neq('cdv', 'REMOVER_TUDO');
+        localStorage.removeItem('cache_veiculos_parados_sul2');
+        localStorage.removeItem('cache_resumo_dispo_sul2');
         setVeiculosParados([]);
         setResumoDispo([]);
         setVeiculo3dSelecionado(null);
+        await supabase
+          .from('veiculos_parados')
+          .delete()
+          .neq('placa', 'REMOVER_TUDO');
+        await supabase
+          .from('resumo_disponibilidade')
+          .delete()
+          .neq('cdv', 'REMOVER_TUDO');
         alert('Tabelas de disponibilidade completamente limpas!');
-        fetchDados();
       } catch (err) {
         alert('Erro ao limpar banco de parados: ' + err.message);
       } finally {
@@ -2164,7 +2188,7 @@ function App() {
     if (
       substituirFrota &&
       !confirm(
-        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir a malha ativa. Isso limpará todos os registros existentes. Deseja prosseguir?'
+        '⚠️ ATENÇÃO MÁXIMA: Marcou para substituir a malha ativa. Isto limpará todos os registos existentes. Deseja prosseguir?'
       )
     ) {
       e.target.value = '';
@@ -2228,7 +2252,9 @@ function App() {
         }
 
         const arrayPrevs = Array.from(mapaPreventivasUnicas.values());
-        setPreventivas(arrayPrevs.map((item, idx) => ({ id: idx + 1, ...item })));
+        setPreventivas(
+          arrayPrevs.map((item, idx) => ({ id: idx + 1, ...item }))
+        );
 
         const carimbo = gerarCarimboDataHoraAtual();
         setUltimaAtuPrev(carimbo);
@@ -2266,7 +2292,7 @@ function App() {
     if (
       substituirTaco &&
       !confirm(
-        '⚠️ ATENÇÃO MÁXIMA: Você marcou para substituir a malha ativa de Tacógrafos. Deseja prosseguir?'
+        '⚠️ ATENÇÃO MÁXIMA: Marcou para substituir a malha ativa de Tacógrafos. Deseja prosseguir?'
       )
     ) {
       e.target.value = '';
@@ -2351,10 +2377,12 @@ function App() {
 
         const arrayTacos = Array.from(mapaTacoUnicos.values());
         if (arrayTacos.length === 0) {
-          throw new Error('Nenhuma placa encontrada na planilha selecionada!');
+          throw new Error('Nenhuma placa encontrada na folha de cálculo selecionada!');
         }
 
-        setTacografos(arrayTacos.map((item, idx) => ({ id: idx + 1, ...item })));
+        setTacografos(
+          arrayTacos.map((item, idx) => ({ id: idx + 1, ...item }))
+        );
 
         const primeiroComMes = arrayTacos.find((t) =>
           extrairNumeroMesPorExtenso(t.mes_referencia)
@@ -2381,7 +2409,7 @@ function App() {
           .insert(arrayTacos);
         if (errTaco) {
           alert(
-            `✅ ${arrayTacos.length} Tacógrafos carregados na tela com sucesso!\n🕒 Atualizado em: ${carimbo}\n\n(Aviso Supabase: ${errTaco.message})`
+            `✅ ${arrayTacos.length} Tacógrafos carregados no ecrã com sucesso!\n🕒 Atualizado em: ${carimbo}\n\n(Aviso Supabase: ${errTaco.message})`
           );
         } else {
           await fetchDados();
@@ -2420,13 +2448,12 @@ function App() {
         const livro = XLSX.read(dadosBinarios, { type: 'binary' });
 
         if (!livro.SheetNames.includes('DIVISÃO RATEIO')) {
-          throw new Error('A aba "DIVISÃO RATEIO" não foi encontrada na planilha!');
+          throw new Error('O separador "DIVISÃO RATEIO" não foi encontrado!');
         }
         if (!livro.SheetNames.includes('BASE (SUL II)')) {
-          throw new Error('A aba "BASE (SUL II)" não foi encontrada na planilha!');
+          throw new Error('O separador "BASE (SUL II)" não foi encontrado!');
         }
 
-        // Extrai dinamicamente a frota por CDV direto da aba Posição Nacional da planilha!
         if (livro.SheetNames.includes('Posição Nacional')) {
           const matrizPN = XLSX.utils.sheet_to_json(
             livro.Sheets['Posição Nacional'],
@@ -2566,11 +2593,18 @@ function App() {
           const row = matrizBase[r];
           if (!row) continue;
 
-          const osRaw = row[1] !== undefined && row[1] !== null ? String(row[1]).trim() : '';
-          const placaRaw = row[3] !== undefined && row[3] !== null ? String(row[3]).toUpperCase().trim() : '';
+          const osRaw =
+            row[1] !== undefined && row[1] !== null ? String(row[1]).trim() : '';
+          const placaRaw =
+            row[3] !== undefined && row[3] !== null
+              ? String(row[3]).toUpperCase().trim()
+              : '';
           const valorRaw = Number(row[5]) || 0;
           const mesRaw = Number(row[13]) || null;
-          const nfRaw = row[15] !== undefined && row[15] !== null ? String(row[15]).trim() : '';
+          const nfRaw =
+            row[15] !== undefined && row[15] !== null
+              ? String(row[15]).trim()
+              : '';
 
           if (!osRaw && !placaRaw && valorRaw === 0) continue;
 
@@ -2584,11 +2618,16 @@ function App() {
             cdv: row[7] ? String(row[7]).toUpperCase().trim() : 'GERAL',
             area: row[8] ? String(row[8]).toUpperCase().trim() : 'SUL2',
             conta_tl: row[9] ? String(row[9]).trim() : null,
-            conta_correcao: row[10] ? String(row[10]).toUpperCase().trim() : 'OUTROS',
+            conta_correcao: row[10]
+              ? String(row[10]).toUpperCase().trim()
+              : 'OUTROS',
             status: row[11] ? String(row[11]).trim() : 'Pendente',
             data_faturamento: formatarDataVersaoBancoNoTopo(row[12]),
             mes: mesRaw,
-            titulo: row[14] && !String(row[14]).includes('#') ? String(row[14]).trim() : null,
+            titulo:
+              row[14] && !String(row[14]).includes('#')
+                ? String(row[14]).trim()
+                : null,
             nf: nfRaw,
           });
         }
@@ -2598,9 +2637,18 @@ function App() {
         localStorage.setItem('atu_fin_sul2', carimbo);
 
         if (substituirFinanceiro) {
-          await supabase.from('financeiro_rateio').delete().neq('conta', 'REMOVER_TUDO');
-          await supabase.from('financeiro_cta').delete().neq('placa', 'REMOVER_TUDO');
-          await supabase.from('financeiro_base').delete().neq('os', 'REMOVER_TUDO');
+          await supabase
+            .from('financeiro_rateio')
+            .delete()
+            .neq('conta', 'REMOVER_TUDO');
+          await supabase
+            .from('financeiro_cta')
+            .delete()
+            .neq('placa', 'REMOVER_TUDO');
+          await supabase
+            .from('financeiro_base')
+            .delete()
+            .neq('os', 'REMOVER_TUDO');
         }
 
         if (listaRateioParaInserir.length > 0) {
@@ -2620,13 +2668,16 @@ function App() {
         const tamanhoLote = 500;
         for (let i = 0; i < listaBaseParaInserir.length; i += tamanhoLote) {
           const lote = listaBaseParaInserir.slice(i, i + tamanhoLote);
-          const { error: errB } = await supabase.from('financeiro_base').insert(lote);
+          const { error: errB } = await supabase
+            .from('financeiro_base')
+            .insert(lote);
           if (errB) throw errB;
         }
 
         setMesSelecionadoFinanceiro(mesRateioPlanilha);
+        setMostrarGavetaUploadFin(false);
         alert(
-          `✅ Sincronização Financeira Concluída!\n🕒 Atualizado em: ${carimbo}\n- Divisão Rateio (Mês ${mesRateioPlanilha}): ${listaRateioParaInserir.length} linhas\n- Alertas CTA: ${listaCtaParaInserir.length} veículos críticos\n- Base SUL II: ${listaBaseParaInserir.length} registros`
+          `✅ Sincronização Financeira Concluída!\n🕒 Atualizado em: ${carimbo}\n- Divisão Rateio (Mês ${mesRateioPlanilha}): ${listaRateioParaInserir.length} linhas\n- Alertas CTA: ${listaCtaParaInserir.length} veículos críticos\n- Base SUL II: ${listaBaseParaInserir.length} registos`
         );
         fetchDados();
       } catch (err) {
@@ -2639,7 +2690,7 @@ function App() {
     leitor.readAsBinaryString(arquivo);
   };
 
-  // --- IMPORTAÇÃO 4: CONTROLE DE VEÍCULOS PARADOS (100% DINÂMICO PELA PLANILHA!) ---
+  // --- IMPORTAÇÃO 4: CONTROLE DE VEÍCULOS PARADOS (SALVA CACHE + SUPABASE SEM SUMIR!) ---
   const lidarComImportacaoVeiculosParados = (e) => {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
@@ -2651,10 +2702,9 @@ function App() {
         const livro = XLSX.read(dadosBinarios, { type: 'binary' });
 
         if (!livro.SheetNames.includes('Em Oficina')) {
-          throw new Error('Aba "Em Oficina" não encontrada na planilha!');
+          throw new Error('O separador "Em Oficina" não foi encontrado!');
         }
 
-        // 1. Extrai todas as linhas reais da aba "Em Oficina"
         const matrizOficina = XLSX.utils.sheet_to_json(
           livro.Sheets['Em Oficina'],
           { header: 1 }
@@ -2680,7 +2730,6 @@ function App() {
           });
         }
 
-        // 2. Extrai o Resumo das Filiais/CDVs direto da aba "Resumo" (ou calcula da Posição Nacional se necessário!)
         let listaResumo = [];
         if (livro.SheetNames.includes('Resumo')) {
           const matrizResumo = XLSX.utils.sheet_to_json(
@@ -2690,7 +2739,10 @@ function App() {
           for (let i = 0; i < matrizResumo.length; i++) {
             const row = matrizResumo[i];
             if (!row || !row[0]) continue;
-            const nomeCdv = String(row[0]).replace("'", '').toUpperCase().trim();
+            const nomeCdv = String(row[0])
+              .replace("'", '')
+              .toUpperCase()
+              .trim();
             if (nomeCdv.startsWith('CDV ')) {
               const disp = Number(row[1]) || 0;
               const ofic = Number(row[2]) || 0;
@@ -2716,8 +2768,10 @@ function App() {
           }
         }
 
-        // Fallback inteligente: se a aba Resumo estiver vazia, calcula direto da aba "Posição Nacional" ou "Em Oficina"!
-        if (listaResumo.length === 0 && livro.SheetNames.includes('Posição Nacional')) {
+        if (
+          listaResumo.length === 0 &&
+          livro.SheetNames.includes('Posição Nacional')
+        ) {
           const matrizPN = XLSX.utils.sheet_to_json(
             livro.Sheets['Posição Nacional'],
             { header: 1 }
@@ -2726,7 +2780,9 @@ function App() {
             String(h || '').toUpperCase().trim()
           );
           const idxCdv = headerPN.findIndex((h) => h.includes('CDV'));
-          const idxStatusOfic = headerPN.findIndex((h) => h.includes('STATUS OFICINA'));
+          const idxStatusOfic = headerPN.findIndex((h) =>
+            h.includes('STATUS OFICINA')
+          );
 
           if (idxCdv !== -1) {
             const agrupado = {};
@@ -2736,9 +2792,17 @@ function App() {
               const c = String(row[idxCdv]).toUpperCase().trim();
               if (!c.startsWith('CDV')) continue;
               if (!agrupado[c]) {
-                agrupado[c] = { disponivel: 0, em_oficina: 0, para_liberacao: 0, total_geral: 0 };
+                agrupado[c] = {
+                  disponivel: 0,
+                  em_oficina: 0,
+                  para_liberacao: 0,
+                  total_geral: 0,
+                };
               }
-              const st = idxStatusOfic !== -1 ? String(row[idxStatusOfic] || '').toUpperCase() : 'DISPON';
+              const st =
+                idxStatusOfic !== -1
+                  ? String(row[idxStatusOfic] || '').toUpperCase()
+                  : 'DISPON';
               agrupado[c].total_geral += 1;
               if (st.includes('OFICINA')) agrupado[c].em_oficina += 1;
               else if (st.includes('LIBERA')) agrupado[c].para_liberacao += 1;
@@ -2750,27 +2814,50 @@ function App() {
                 cdv: c,
                 ...agrupado[c],
                 pct_dispo: Number(
-                  ((agrupado[c].disponivel / (agrupado[c].total_geral || 1)) * 100).toFixed(2)
+                  (
+                    (agrupado[c].disponivel / (agrupado[c].total_geral || 1)) *
+                    100
+                  ).toFixed(2)
                 ),
               }));
           }
         }
 
-        setVeiculosParados(
-          listaParados.map((item, idx) => ({ id: idx + 1, ...item }))
+        const paradosComId = listaParados.map((item, idx) => ({
+          id: idx + 1,
+          ...item,
+        }));
+
+        // 1. Persiste imediatamente em estado + localStorage (sobrevive ao F5!)
+        setVeiculosParados(paradosComId);
+        localStorage.setItem(
+          'cache_veiculos_parados_sul2',
+          JSON.stringify(paradosComId)
         );
-        if (listaParados.length > 0) {
-          setVeiculo3dSelecionado(listaParados[0]);
+        if (paradosComId.length > 0) {
+          setVeiculo3dSelecionado(paradosComId[0]);
         }
+
         setResumoDispo(listaResumo);
+        localStorage.setItem(
+          'cache_resumo_dispo_sul2',
+          JSON.stringify(listaResumo)
+        );
 
         const carimbo = gerarCarimboDataHoraAtual();
         setUltimaAtuParados(carimbo);
         localStorage.setItem('atu_parados_sul2', carimbo);
 
+        // 2. Persiste no Supabase em segundo plano
         if (substituirParados) {
-          await supabase.from('veiculos_parados').delete().neq('placa', 'REMOVER_TUDO');
-          await supabase.from('resumo_disponibilidade').delete().neq('cdv', 'REMOVER_TUDO');
+          await supabase
+            .from('veiculos_parados')
+            .delete()
+            .neq('placa', 'REMOVER_TUDO');
+          await supabase
+            .from('resumo_disponibilidade')
+            .delete()
+            .neq('cdv', 'REMOVER_TUDO');
         }
         if (listaParados.length > 0) {
           const { error: errP } = await supabase
@@ -2785,12 +2872,11 @@ function App() {
           if (errR) console.warn('Aviso resumo_disponibilidade:', errR.message);
         }
 
-        await fetchDados();
         alert(
-          `✅ Planilha de Veículos Parados sincronizada no Supabase!\n🕒 Atualizado em: ${carimbo}\n- ${listaParados.length} veículos mapeados na Vitrine 3D/2D\n- ${listaResumo.length} CDVs analisados da planilha`
+          `✅ Folha de cálculo de Veículos Parados sincronizada!\n🕒 Atualizado em: ${carimbo}\n- ${listaParados.length} veículos mapeados na Vitrine 3D/2D\n- ${listaResumo.length} CDVs analisados`
         );
       } catch (err) {
-        alert('Erro ao importar planilha: ' + err.message);
+        alert('Erro ao importar folha de cálculo: ' + err.message);
       } finally {
         setCarregando(false);
         e.target.value = '';
@@ -3067,7 +3153,10 @@ function App() {
           ? regAopComData
           : regConta.filter((b) => b.nf === 'AOP');
 
-      const aop = regAop.reduce((acc, r) => acc + (Number(r.valor_total) || 0), 0);
+      const aop = regAop.reduce(
+        (acc, r) => acc + (Number(r.valor_total) || 0),
+        0
+      );
       const prov = regConta
         .filter((b) => b.nf === 'PROV')
         .reduce((acc, r) => acc + (Number(r.valor_total) || 0), 0);
@@ -3148,12 +3237,13 @@ function App() {
   const totalPendenteMes = Number(linhaTotalGeralRateio.pend) || 0;
   const saldoFinalMes = Number(linhaTotalGeralRateio.saldo) || 0;
 
-  // Mapa de placas por CDV 100% dinâmico (usa Posição Nacional, Resumo de Dispo ou Placas Únicas da Base!)
   const mapaFrotaDinamico = { ...frotaPorCdv };
   if (Object.keys(mapaFrotaDinamico).length === 0 && resumoDispo.length > 0) {
     resumoDispo.forEach((r) => {
       if (r.cdv && r.total_geral > 0) {
-        mapaFrotaDinamico[String(r.cdv).toUpperCase().trim()] = Number(r.total_geral);
+        mapaFrotaDinamico[String(r.cdv).toUpperCase().trim()] = Number(
+          r.total_geral
+        );
       }
     });
   }
@@ -3265,10 +3355,8 @@ function App() {
     });
 
   // ============================================================================
-  // --- ABA GERENCIAL 4: REGRAS DE VEÍCULOS PARADOS & RESUMO (100% DA PLANILHA) ---
+  // --- ABA GERENCIAL 4: REGRAS DE VEÍCULOS PARADOS & RESUMO ---
   // ============================================================================
-  // Se a tabela resumo_disponibilidade tiver dados importados da aba "Resumo", usa ela;
-  // caso contrário, calcula dinamicamente a partir dos veículos importados da aba "Em Oficina"!
   const resumoDispoCalculado =
     resumoDispo.length > 0
       ? resumoDispo
@@ -3392,13 +3480,13 @@ function App() {
               Painel Frota PepsiCo
             </h1>
             <p className="text-xs text-gray-400 mt-1">
-              Acesso à Malha Logística Assinado
+              SUL2
             </p>
           </div>
           <form onSubmit={lidarComLogin} className="space-y-5">
             <input
               type="text"
-              placeholder="Usuário (Ex: SUL2CO)"
+              placeholder="Login (Ex: SUL2CO)"
               value={usuarioInput}
               onChange={(e) => setUsuarioInput(e.target.value)}
               className="w-full bg-[#0B1329] border border-gray-800 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none"
@@ -3419,14 +3507,14 @@ function App() {
               type="submit"
               className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-xs uppercase py-3.5 rounded-xl shadow-md"
             >
-              Autenticar Sistema
+              Acessar
             </button>
           </form>
         </div>
         <div className="mt-8 text-center">
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
             Operado por{' '}
-            <span className="text-orange-400 font-black">Opentech</span>
+            <span className="text-orange-400 font-black">Fidel Barbosa(Opentech)</span>
           </p>
         </div>
       </div>
@@ -3435,160 +3523,206 @@ function App() {
 
   return (
     <div className="flex h-screen font-sans bg-[#0B1329] text-gray-100 relative overflow-hidden">
-      <aside className="w-64 border-r border-gray-800 flex flex-col bg-[#1C2541]/90">
-        <div className="h-16 flex items-center px-6 border-b border-gray-800">
-          <div className="w-8 h-8 bg-gradient-to-br from-[#0000FF] to-[#FFA500] rounded flex items-center justify-center text-white font-black text-sm">
-            PF
+      {/* ============================================================================ */}
+      {/* --- BARRA LATERAL RETRÁTIL INTELIGENTE (MINI-DOCK / EXPANSÍVEL) --- */}
+      {/* ============================================================================ */}
+      <aside
+        className={`${
+          sidebarAberta ? 'w-60' : 'w-16'
+        } border-r border-gray-800 flex flex-col bg-[#1C2541]/95 transition-all duration-300 shrink-0 z-40 select-none`}
+      >
+        <div className="h-14 flex items-center justify-between px-3 border-b border-gray-800">
+          <div className="flex items-center overflow-hidden">
+            <div
+              onClick={() => setSidebarAberta(!sidebarAberta)}
+              className="w-9 h-9 bg-gradient-to-br from-[#0000FF] to-[#FFA500] rounded-xl flex items-center justify-center text-white font-black text-xs shrink-0 cursor-pointer shadow-md"
+              title="Expandir / Recolher Menu"
+            >
+              PF
+            </div>
+            {sidebarAberta && (
+              <span className="font-black text-base ml-2.5 tracking-tight text-white truncate">
+                Painel Frota
+              </span>
+            )}
           </div>
-          <span className="font-bold text-lg ml-3 tracking-tight text-white">
-            Painel Frota
-          </span>
-        </div>
-        <div className="p-4 border-b border-gray-800">
-          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            Unidade / Filial
-          </label>
-          <select
-            className="w-full bg-[#0B1329] border border-gray-700 text-xs font-bold p-2 mt-1 rounded-lg uppercase text-white outline-none"
-            value={filialAtual}
-            onChange={(e) => setFilialAtual(e.target.value)}
+          <button
+            onClick={() => setSidebarAberta(!sidebarAberta)}
+            className="p-1.5 rounded-lg bg-[#0B1329] text-gray-400 hover:text-white border border-gray-700/80 transition-all"
+            title={sidebarAberta ? 'Recolher Barra Lateral' : 'Expandir Barra Lateral'}
           >
-            <option value="Todas">Visão Geral (Todas)</option>
-            {Array.from(
-              new Set([
-                ...preventivas.map((p) => p.regional),
-                ...tacografos.map((t) => t.regional),
-              ])
-            )
-              .filter(Boolean)
-              .map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-          </select>
+            {sidebarAberta ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          </button>
         </div>
-        <nav className="p-3 space-y-1 flex-1">
+
+        {sidebarAberta && (
+          <div className="p-3 border-b border-gray-800 animate-fadeIn">
+            <label className="text-[9px] font-black text-gray-400 uppercase tracking-wider">
+              Unidade / Filial
+            </label>
+            <select
+              className="w-full bg-[#0B1329] border border-gray-700 text-xs font-bold p-1.5 mt-1 rounded-lg uppercase text-white outline-none"
+              value={filialAtual}
+              onChange={(e) => setFilialAtual(e.target.value)}
+            >
+              <option value="Todas">Visão Geral (Todas)</option>
+              {Array.from(
+                new Set([
+                  ...preventivas.map((p) => p.regional),
+                  ...tacografos.map((t) => t.regional),
+                ])
+              )
+                .filter(Boolean)
+                .map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
+
+        <nav className="p-2 space-y-1.5 flex-1">
           <button
             onClick={() => setActiveTab('frota')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl text-xs font-bold ${
+            title="Fila de Oficina"
+            className={`w-full flex items-center ${
+              sidebarAberta ? 'justify-start gap-3 px-3' : 'justify-center px-0'
+            } py-2.5 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'frota'
-                ? 'bg-blue-50/10 text-[#0000FF]'
-                : 'text-gray-400'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'text-gray-400 hover:bg-gray-800/50'
             }`}
           >
-            <CalendarDays size={18} />
-            <span>Fila de Oficina</span>
+            <CalendarDays size={18} className="shrink-0" />
+            {sidebarAberta && <span className="truncate">Fila de Oficina</span>}
           </button>
+
           <button
             onClick={() => setActiveTab('historico_mensal')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl text-xs font-bold ${
+            title="Status Preventivas"
+            className={`w-full flex items-center ${
+              sidebarAberta ? 'justify-start gap-3 px-3' : 'justify-center px-0'
+            } py-2.5 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'historico_mensal'
-                ? 'bg-emerald-50/10 text-emerald-400'
-                : 'text-gray-400'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'text-gray-400 hover:bg-gray-800/50'
             }`}
           >
-            <History size={18} />
-            <span>Status Preventivas</span>
+            <History size={18} className="shrink-0" />
+            {sidebarAberta && <span className="truncate">Status Preventivas</span>}
           </button>
+
           <button
             onClick={() => setActiveTab('status_tacografos')}
-            className={`w-full flex items-center gap-3 p-3 rounded-xl text-xs font-bold ${
+            title="Status Tacógrafos"
+            className={`w-full flex items-center ${
+              sidebarAberta ? 'justify-start gap-3 px-3' : 'justify-center px-0'
+            } py-2.5 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'status_tacografos'
-                ? 'bg-amber-50/10 text-amber-400'
-                : 'text-gray-400'
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                : 'text-gray-400 hover:bg-gray-800/50'
             }`}
           >
-            <Clock size={18} />
-            <span>Status Tacógrafos</span>
+            <Clock size={18} className="shrink-0" />
+            {sidebarAberta && <span className="truncate">Status Tacógrafos</span>}
           </button>
 
           <button
             onClick={() => setActiveTab('status_financeiro')}
-            className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold transition-all ${
+            title="Status Financeiro & Rateio"
+            className={`w-full flex items-center ${
+              sidebarAberta ? 'justify-between px-3' : 'justify-center px-0'
+            } py-2.5 rounded-xl text-xs font-bold transition-all relative ${
               activeTab === 'status_financeiro'
-                ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                : 'text-gray-400 hover:bg-gray-800/40'
+                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                : 'text-gray-400 hover:bg-gray-800/50'
             }`}
           >
             <div className="flex items-center gap-3">
-              <DollarSign size={18} className="text-rose-400" />
-              <span>Status Financeiro</span>
+              <DollarSign size={18} className="text-rose-400 shrink-0" />
+              {sidebarAberta && <span className="truncate">Status Financeiro</span>}
             </div>
-            {finCta.length > 0 && (
+            {finCta.length > 0 && sidebarAberta && (
               <span className="bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
-                {finCta.length} CTA
+                {finCta.length}
               </span>
+            )}
+            {finCta.length > 0 && !sidebarAberta && (
+              <span className="w-2 h-2 rounded-full bg-red-500 absolute top-1.5 right-1.5 animate-ping" />
             )}
           </button>
 
           <button
             onClick={() => setActiveTab('veiculos_parados')}
-            className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold transition-all ${
+            title="Veículos Parados (3D/2D)"
+            className={`w-full flex items-center ${
+              sidebarAberta ? 'justify-between px-3' : 'justify-center px-0'
+            } py-2.5 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'veiculos_parados'
-                ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'
-                : 'text-gray-400 hover:bg-gray-800/40'
+                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                : 'text-gray-400 hover:bg-gray-800/50'
             }`}
           >
             <div className="flex items-center gap-3">
-              <Truck size={18} className="text-cyan-400" />
-              <span>Veículos Parados (3D)</span>
+              <Truck size={18} className="text-cyan-400 shrink-0" />
+              {sidebarAberta && <span className="truncate">Veículos Parados</span>}
             </div>
-            <span className="bg-yellow-400 text-gray-950 text-[9px] font-black px-1.5 py-0.5 rounded-full">
-              3D/2D
-            </span>
+            {sidebarAberta && (
+              <span className="bg-yellow-400 text-gray-950 text-[8px] font-black px-1.5 py-0.5 rounded-full">
+                3D/2D
+              </span>
+            )}
           </button>
 
           <a
             href={LINK_POWER_BI}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full flex items-center gap-3 p-3 rounded-xl text-gray-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all group border border-transparent hover:border-emerald-500/20"
+            title="BI de Multas"
+            className={`w-full flex items-center ${
+              sidebarAberta ? 'justify-start gap-3 px-3' : 'justify-center px-0'
+            } py-2.5 rounded-xl text-gray-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all`}
           >
-            <BarChart3
-              size={18}
-              className="text-emerald-500 group-hover:animate-pulse"
-            />
-            <span className="flex items-center gap-1 font-bold text-xs">
-              {' '}
-              BI de Multas <ExternalLink
-                size={12}
-                className="opacity-60"
-              />{' '}
-            </span>
+            <BarChart3 size={18} className="text-emerald-500 shrink-0" />
+            {sidebarAberta && (
+              <span className="flex items-center gap-1 font-bold text-xs truncate">
+                BI de Multas <ExternalLink size={11} className="opacity-60" />
+              </span>
+            )}
           </a>
         </nav>
-        <div className="p-4 border-t border-gray-800 text-center">
-          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">
-            Opentech @ 2026
-          </p>
+
+        <div className="p-2.5 border-t border-gray-800 text-center">
+          <button
+            onClick={fetchDados}
+            title="Sincronizar Banco Agora"
+            className="w-full py-1.5 rounded-lg bg-[#0B1329] hover:bg-gray-800 border border-gray-700 text-gray-300 flex items-center justify-center gap-1.5 text-[10px] font-bold"
+          >
+            <RefreshCw
+              size={12}
+              className={rotacionar ? 'animate-spin text-[#FFA500]' : ''}
+            />
+            {sidebarAberta && <span>Sincronizar</span>}
+          </button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-8 relative">
-        <div className="fixed top-4 right-4 flex items-center gap-2 z-50">
-          <button
-            onClick={fetchDados}
-            className="border border-gray-700 bg-[#1C2541] p-2 rounded-full text-gray-200"
-          >
-            <RefreshCw
-              size={14}
-              className={rotacionar ? 'animate-spin text-[#FFA500]' : ''}
-            />
-          </button>
-        </div>
-
+      {/* ============================================================================ */}
+      {/* --- ÁREA PRINCIPAL WIDESCREEN (OCUPA 100% DA LARGURA COM PADDING COMPACTO) --- */}
+      {/* ============================================================================ */}
+      <main className="flex-1 overflow-y-auto px-5 py-4 relative">
         {/* ============================================================================ */}
         {/* --- TELA 1: FILA DE OFICINA --- */}
         {/* ============================================================================ */}
         {activeTab === 'frota' && (
-          <div className="max-w-6xl mx-auto space-y-6 animate-fadeIn">
-            <div className="flex justify-between items-center border-b border-gray-800 pb-4">
+          <div className="w-full space-y-4 animate-fadeIn">
+            <div className="flex flex-wrap justify-between items-center border-b border-gray-800 pb-3 gap-2">
               <div>
-                <h2 className="text-xl font-bold">
+                <h2 className="text-lg font-black text-white">
                   Painel Operacional Logístico
                 </h2>
-                <p className="text-[11px] text-gray-400 mt-0.5">
+                <p className="text-[11px] text-gray-400">
                   🕒 Preventivas: <span className="text-orange-400 font-bold">{ultimaAtuPrev}</span> • Tacógrafos:{' '}
                   <span className="text-blue-400 font-bold">{ultimaAtuTaco}</span>
                 </p>
@@ -3598,7 +3732,7 @@ function App() {
                   onClick={() => setSubAbaFrota('preventivas')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
                     subAbaFrota === 'preventivas'
-                      ? 'bg-orange-500/10 text-[#FFA500]'
+                      ? 'bg-orange-500/15 text-[#FFA500]'
                       : 'text-gray-400'
                   }`}
                 >
@@ -3608,7 +3742,7 @@ function App() {
                   onClick={() => setSubAbaFrota('tacografos')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
                     subAbaFrota === 'tacografos'
-                      ? 'bg-blue-50/10 text-[#0000FF]'
+                      ? 'bg-blue-500/15 text-blue-400'
                       : 'text-gray-400'
                   }`}
                 >
@@ -3618,40 +3752,38 @@ function App() {
             </div>
 
             {subAbaFrota === 'preventivas' && (
-              <div className="space-y-6">
-                <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex justify-between items-center gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-sm font-black uppercase text-orange-400">
-                        🛠️ Importar Excel de preventivas
-                      </h3>
-                      <span className="text-[10px] bg-orange-500/15 text-orange-300 border border-orange-500/30 px-2.5 py-0.5 rounded-full font-bold">
-                        🕒 Última atualização: {ultimaAtuPrev}
-                      </span>
-                    </div>
-                    <p className="text-[11px] opacity-70 mt-1">
-                      Selecione a opção abaixo para evitar placas duplicadas.
-                    </p>
-                    <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-gray-400">
+              <div className="space-y-3">
+                {/* BARRA COMPACTA DE IMPORTAÇÃO + BUSCA NA MESMA LINHA */}
+                <div className="p-3 bg-[#1C2541] border border-gray-800 rounded-xl flex flex-wrap justify-between items-center gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-[240px] bg-[#0B1329] px-3 py-2 rounded-lg border border-gray-700">
+                    <Search size={15} className="text-gray-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={termoBusca}
+                      onChange={(e) => setTermoBusca(e.target.value)}
+                      placeholder="Pesquisar preventiva ativa por Placa ou CDV..."
+                      className="bg-transparent w-full outline-none text-xs text-white"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-300 font-bold">
                       <input
                         type="checkbox"
                         checked={substituirFrota}
                         onChange={(e) => setSubstituirFrota(e.target.checked)}
                         className="accent-orange-500"
                       />
-                      Substituir arquivo atual
+                      Substituir atual
                     </label>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                     <button
                       onClick={limparTodaTabelaPreventivas}
-                      className="bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+                      className="bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-3 py-2 rounded-lg transition-all flex items-center gap-1"
                     >
-                      <Trash2 size={14} /> Limpar Banco
+                      <Trash2 size={13} /> Limpar
                     </button>
-                    <label className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer flex items-center gap-1.5 transition-all">
-                      <Upload size={14} />
-                      Carregar Excel
+                    <label className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-2 rounded-lg cursor-pointer flex items-center gap-1.5 transition-all">
+                      <Upload size={13} />
+                      Carregar Excel Preventivas
                       <input
                         type="file"
                         accept=".xlsx, .xls"
@@ -3659,32 +3791,23 @@ function App() {
                         className="hidden"
                       />
                     </label>
-                    </div>
+                  </div>
                 </div>
-                <div className="p-4 bg-[#111A33] border border-gray-800 rounded-xl flex items-center gap-3">
-                  <Search size={18} className="text-gray-400" />
-                  <input
-                    type="text"
-                    value={termoBusca}
-                    onChange={(e) => setTermoBusca(e.target.value)}
-                    placeholder="Pesquisar preventiva ativa..."
-                    className="bg-transparent w-full outline-none text-xs text-white"
-                  />
-                </div>
-                <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden">
-                  <div className="max-h-[500px] overflow-y-auto">
+
+                <div className="rounded-xl border border-gray-800 bg-[#1C2541] overflow-hidden">
+                  <div className="max-h-[calc(100vh-190px)] overflow-y-auto">
                     <table className="w-full text-left text-xs table-auto">
                       <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
                         <tr>
-                          <th className="p-4">Placa</th>
-                          <th className="p-4">Filial</th>
-                          <th className="p-4">CDV</th>
-                          <th className="p-4">KM</th>
-                          <th className="p-4 text-orange-400">Mês Meta</th>
-                          <th className="p-4">Oficina</th>
-                          <th className="p-4">Obs 1</th>
-                          <th className="p-4">Obs 2</th>
-                          <th className="p-4 text-right">Ação</th>
+                          <th className="p-3">Placa</th>
+                          <th className="p-3">Filial</th>
+                          <th className="p-3">CDV</th>
+                          <th className="p-3">KM</th>
+                          <th className="p-3 text-orange-400">Mês Meta</th>
+                          <th className="p-3">Oficina</th>
+                          <th className="p-3">Obs 1</th>
+                          <th className="p-3">Obs 2</th>
+                          <th className="p-3 text-right">Ação</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-800">
@@ -3692,33 +3815,40 @@ function App() {
                           .filter(
                             (p) =>
                               !termoBusca ||
-                              String(p.placa || '').includes(termoBusca.toUpperCase()) ||
-                              String(p.cdv || '').includes(termoBusca.toUpperCase())
+                              String(p.placa || '').includes(
+                                termoBusca.toUpperCase()
+                              ) ||
+                              String(p.cdv || '').includes(
+                                termoBusca.toUpperCase()
+                              )
                           )
                           .map((p, idx) => (
-                            <tr key={p.id || idx} className="hover:bg-gray-800/5">
-                              <td className="p-4 font-mono font-bold">
+                            <tr
+                              key={p.id || idx}
+                              className="hover:bg-gray-800/20"
+                            >
+                              <td className="p-3 font-mono font-bold">
                                 {p.placa}
                               </td>
-                              <td className="p-4 text-blue-400 uppercase">
+                              <td className="p-3 text-blue-400 uppercase">
                                 {p.regional}
                               </td>
-                              <td className="p-4 uppercase">{p.cdv}</td>
-                              <td className="p-4">{p.km || '--'}</td>
-                              <td className="p-4 text-orange-400 font-black uppercase">
+                              <td className="p-3 uppercase">{p.cdv}</td>
+                              <td className="p-3">{p.km || '--'}</td>
+                              <td className="p-3 text-orange-400 font-black uppercase">
                                 {p.mes_referencia || 'SEM MÊS'}
                               </td>
-                              <td className="p-4">{p.oficina || '--'}</td>
-                              <td className="p-4 text-gray-400 italic">
+                              <td className="p-3">{p.oficina || '--'}</td>
+                              <td className="p-3 text-gray-400 italic">
                                 {p.observacao || '--'}
                               </td>
-                              <td className="p-4 text-gray-400 italic">
+                              <td className="p-3 text-gray-400 italic">
                                 {p.observacao2 || '--'}
                               </td>
-                              <td className="p-4 text-right">
+                              <td className="p-3 text-right">
                                 <button
                                   onClick={() => concluirPreventiva(p.id)}
-                                  className="bg-emerald-600/10 text-emerald-500 text-[10px] px-2.5 py-1 rounded font-bold"
+                                  className="bg-emerald-600/15 text-emerald-400 hover:bg-emerald-600 hover:text-white text-[10px] px-2.5 py-1 rounded font-bold transition-all"
                                 >
                                   Baixa
                                 </button>
@@ -3733,40 +3863,37 @@ function App() {
             )}
 
             {subAbaFrota === 'tacografos' && (
-              <div className="space-y-6">
-                <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex justify-between items-center gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-sm font-black uppercase text-blue-400">
-                        ⏱️ Importar excel de Tacógrafos
-                      </h3>
-                      <span className="text-[10px] bg-blue-500/15 text-blue-300 border border-blue-500/30 px-2.5 py-0.5 rounded-full font-bold">
-                        🕒 Última atualização: {ultimaAtuTaco}
-                      </span>
-                    </div>
-                    <p className="text-[11px] opacity-70 mt-1">
-                      Selecione a opção abaixo para evitar placas duplicadas.
-                    </p>
-                    <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-gray-400">
+              <div className="space-y-3">
+                <div className="p-3 bg-[#1C2541] border border-gray-800 rounded-xl flex flex-wrap justify-between items-center gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-[240px] bg-[#0B1329] px-3 py-2 rounded-lg border border-gray-700">
+                    <Search size={15} className="text-gray-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={termoBuscaTaco}
+                      onChange={(e) => setTermoBuscaTaco(e.target.value)}
+                      placeholder="Pesquisar laudo ativo por Placa ou CDV..."
+                      className="bg-transparent w-full outline-none text-xs text-white"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-300 font-bold">
                       <input
                         type="checkbox"
                         checked={substituirTaco}
                         onChange={(e) => setSubstituirTaco(e.target.checked)}
                         className="accent-blue-500"
                       />
-                      Substituir arquivo atual
+                      Substituir atual
                     </label>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                     <button
                       onClick={limparTodaTabelaTacografos}
-                      className="bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+                      className="bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-3 py-2 rounded-lg transition-all flex items-center gap-1"
                     >
-                      <Trash2 size={14} /> Limpar Banco
+                      <Trash2 size={13} /> Limpar
                     </button>
-                    <label className="bg-blue-600 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer flex items-center gap-1.5 transition-all">
-                      <Upload size={14} />
-                      Carregar Excel
+                    <label className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xs px-3.5 py-2 rounded-lg cursor-pointer flex items-center gap-1.5 transition-all">
+                      <Upload size={13} />
+                      Carregar Excel Tacógrafos
                       <input
                         type="file"
                         accept=".xlsx, .xls"
@@ -3776,30 +3903,21 @@ function App() {
                     </label>
                   </div>
                 </div>
-                <div className="p-4 bg-[#111A33] border border-gray-800 rounded-xl flex items-center gap-3">
-                  <Search size={18} className="text-gray-400" />
-                  <input
-                    type="text"
-                    value={termoBuscaTaco}
-                    onChange={(e) => setTermoBuscaTaco(e.target.value)}
-                    placeholder="Pesquisar laudo ativo..."
-                    className="bg-transparent w-full outline-none text-xs text-white"
-                  />
-                </div>
-                <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden">
-                  <div className="max-h-[500px] overflow-y-auto">
+
+                <div className="rounded-xl border border-gray-800 bg-[#1C2541] overflow-hidden">
+                  <div className="max-h-[calc(100vh-190px)] overflow-y-auto">
                     <table className="w-full text-left text-xs table-auto">
                       <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
                         <tr>
-                          <th className="p-4">Placa</th>
-                          <th className="p-4">Modelo</th>
-                          <th className="p-4">CDV Logístico</th>
-                          <th className="p-4 font-bold text-blue-400">
+                          <th className="p-3">Placa</th>
+                          <th className="p-3">Modelo</th>
+                          <th className="p-3">CDV Logístico</th>
+                          <th className="p-3 font-bold text-blue-400">
                             Filial / Sede
                           </th>
-                          <th className="p-4">Mês / Ano Meta</th>
-                          <th className="p-4">Validade Legal</th>
-                          <th className="p-4 text-right">Ação</th>
+                          <th className="p-3">Mês / Ano Meta</th>
+                          <th className="p-3">Validade Legal</th>
+                          <th className="p-3 text-right">Ação</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-800">
@@ -3807,35 +3925,42 @@ function App() {
                           .filter(
                             (t) =>
                               !termoBuscaTaco ||
-                              String(t.placa || '').includes(termoBuscaTaco.toUpperCase()) ||
-                              String(t.cdv || '').includes(termoBuscaTaco.toUpperCase())
+                              String(t.placa || '').includes(
+                                termoBuscaTaco.toUpperCase()
+                              ) ||
+                              String(t.cdv || '').includes(
+                                termoBuscaTaco.toUpperCase()
+                              )
                           )
                           .map((t, idx) => (
-                            <tr key={t.id || idx} className="hover:bg-gray-800/5">
-                              <td className="p-4 font-mono font-bold">
+                            <tr
+                              key={t.id || idx}
+                              className="hover:bg-gray-800/20"
+                            >
+                              <td className="p-3 font-mono font-bold">
                                 {t.placa}
                               </td>
-                              <td className="p-4 text-gray-400 uppercase">
+                              <td className="p-3 text-gray-400 uppercase">
                                 {t.modelo || 'CAMINHÃO'}
                               </td>
-                              <td className="p-4 uppercase">{t.cdv}</td>
-                              <td className="p-4 uppercase text-blue-400">
+                              <td className="p-3 uppercase">{t.cdv}</td>
+                              <td className="p-3 uppercase text-blue-400">
                                 {t.regional}
                               </td>
-                              <td className="p-4 text-blue-400 font-black uppercase">
+                              <td className="p-3 text-blue-400 font-black uppercase">
                                 {t.mes_referencia || 'SEM MÊS'}
                               </td>
-                              <td className="p-4 font-bold">
+                              <td className="p-3 font-bold">
                                 {t.validade
                                   ? new Date(
                                       t.validade + 'T00:00:00'
                                     ).toLocaleDateString('pt-BR')
                                   : '--'}
                               </td>
-                              <td className="p-4 text-right">
+                              <td className="p-3 text-right">
                                 <button
                                   onClick={() => concluirTacografo(t.id)}
-                                  className="bg-emerald-600/10 text-emerald-500 text-[10px] px-2.5 py-1 rounded font-bold"
+                                  className="bg-emerald-600/15 text-emerald-400 hover:bg-emerald-600 hover:text-white text-[10px] px-2.5 py-1 rounded font-bold transition-all"
                                 >
                                   Regularizar
                                 </button>
@@ -3852,25 +3977,20 @@ function App() {
         )}
 
         {/* ============================================================================ */}
-        {/* --- TELA 2: ABA STATUS PREVENTIVAS --- */}
+        {/* --- TELA 2: STATUS PREVENTIVAS (SPLIT-SCREEN: GRÁFICO ESQ + TABELA DIR) --- */}
         {/* ============================================================================ */}
         {activeTab === 'historico_mensal' && (
-          <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-bold tracking-tight text-white">
-                    Cronograma de Preventivas
-                  </h2>
-                  <span className="text-[10px] bg-orange-500/15 text-orange-300 border border-orange-500/30 px-2.5 py-1 rounded-full font-bold">
-                    🕒 Última atualização: {ultimaAtuPrev}
-                  </span>
-                </div>
-                <p className="text-gray-400 text-xs mt-0.5">
-                  Indicadores operacionais e controle por mês.
-                </p>
+          <div className="w-full animate-fadeIn space-y-3">
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-black tracking-tight text-white">
+                  Cronograma de Preventivas
+                </h2>
+                <span className="text-[10px] bg-orange-500/15 text-orange-300 border border-orange-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                  🕒 {ultimaAtuPrev}
+                </span>
               </div>
-              <div className="flex items-center gap-2 p-2 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
                 <Clock size={14} className="text-[#FFA500]" />
                 <span className="text-gray-400 text-[11px]">Mês:</span>
                 <select
@@ -3894,343 +4014,272 @@ function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              <div
-                onClick={() =>
-                  setStatusFiltroCard(
-                    statusFiltroCard === 'EM DIA' ? 'TODOS' : 'EM DIA'
-                  )
-                }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCard === 'EM DIA' ? 'ring-4 ring-green-400' : ''
-                } bg-gradient-to-br from-green-500 to-emerald-600 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">EM DIA</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
-                    {pctEmDia}%
-                  </span>
-                </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {String(qtdEmDiaComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-              <div
-                onClick={() =>
-                  setStatusFiltroCard(
-                    statusFiltroCard === 'EM EXECUÇÃO' ? 'TODOS' : 'EM EXECUÇÃO'
-                  )
-                }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCard === 'EM EXECUÇÃO'
-                    ? 'ring-4 ring-orange-400'
-                    : ''
-                } bg-gradient-to-br from-orange-500 to-amber-600 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">EM EXECUÇÃO</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
-                    {pctExecucao}%
-                  </span>
-                </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {String(qtdExecucaoComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-              <div
-                onClick={() =>
-                  setStatusFiltroCard(
-                    statusFiltroCard === 'A VENCER' ? 'TODOS' : 'A VENCER'
-                  )
-                }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCard === 'A VENCER'
-                    ? 'ring-4 ring-yellow-400'
-                    : ''
-                } bg-gradient-to-br from-yellow-400 to-yellow-500 text-gray-900`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">A VENCER</span>
-                  <span className="text-[10px] bg-black/10 px-1.5 py-0.5 rounded font-bold">
-                    {pctAVencer}%
-                  </span>
-                </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {String(qtdAVencerComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-70">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-              <div
-                onClick={() =>
-                  setStatusFiltroCard(
-                    statusFiltroCard === 'VENCIDAS' ? 'TODOS' : 'VENCIDAS'
-                  )
-                }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCard === 'VENCIDAS' ? 'ring-4 ring-red-500' : ''
-                } bg-gradient-to-br from-red-500 to-rose-600 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black">VENCIDAS</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
-                    {pctVencidas}%
-                  </span>
-                </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {String(qtdVencidasComData).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-              <div
-                onClick={() =>
-                  setStatusFiltroCard(
-                    statusFiltroCard === 'SEM DATA' ? 'TODOS' : 'SEM DATA'
-                  )
-                }
-                className={`p-4 rounded-xl shadow-sm border border-gray-400 cursor-pointer transition-all ${
-                  statusFiltroCard === 'SEM DATA' ? 'ring-4 ring-gray-400' : ''
-                } bg-gradient-to-br from-gray-600 to-gray-700 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black text-gray-300">
-                    SEM MÊS
-                  </span>
-                  <span className="text-[9px] bg-black/20 text-orange-400 px-1 py-0.5 rounded font-black">
-                    FILA VIVA
-                  </span>
-                </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {String(preventivasSemDataFilaGeral.length).padStart(2, '0')}{' '}
-                  <span className="text-[10px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-            </div>
-
-            <div className="p-6 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-2xl relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
-                <div>
-                  <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                    <span>📊 Visão Geral</span>
-                  </h3>
-                  <p className="text-xs text-gray-400">
-                    Frota por mês (Clique em uma coluna para selecionar o mês)
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 bg-[#0B1329] p-1.5 rounded-xl border border-gray-800">
-                  <span className="text-[10px] font-bold text-gray-400 px-2 uppercase">
-                    Visão 2026
-                  </span>
-                </div>
-              </div>
-
-              <div className="relative pt-6 pb-2">
-                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20 border-b border-gray-700">
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                </div>
-
-                <div className="h-48 flex items-end justify-between gap-1.5 sm:gap-2 px-2 relative z-10">
-                  {contagemPorMesPrev.map((item) => {
-                    const estaSelecionado =
-                      Number(mesSelecionadoHistorico) === item.num;
-                    const alturaPct = Math.max(
-                      (item.qtd / maxQtdMesesPrev) * 100,
-                      4
-                    );
-
-                    return (
-                      <div
-                        key={item.num}
-                        onClick={() => {
-                          setMesSelecionadoHistorico(item.num);
-                          setStatusFiltroCard('TODOS');
-                        }}
-                        className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group"
-                      >
-                        <span
-                          className={`text-[10px] font-black mb-1 transition-all ${
-                            estaSelecionado
-                              ? 'text-orange-400 scale-125'
-                              : 'text-gray-400 group-hover:text-white'
-                          }`}
-                        >
-                          {item.qtd > 0 ? item.qtd : ''}
-                        </span>
-
-                        <div
-                          className={`w-full max-w-[36px] rounded-t-lg transition-all duration-300 ${
-                            estaSelecionado
-                              ? 'bg-gradient-to-t from-rose-600 via-orange-500 to-amber-300 ring-2 ring-orange-400 shadow-lg shadow-orange-500/30'
-                              : 'bg-gradient-to-t from-rose-900/60 via-orange-600/70 to-amber-500/80 group-hover:from-rose-600 group-hover:to-amber-400'
-                          }`}
-                          style={{ height: `${alturaPct}%` }}
-                        ></div>
-
-                        <span
-                          className={`mt-3 text-[11px] font-bold uppercase transition-all ${
-                            estaSelecionado
-                              ? 'text-orange-400 font-black'
-                              : 'text-gray-400 group-hover:text-white'
-                          }`}
-                        >
-                          {item.sigla}
-                        </span>
-                      </div>
-                    );
-                  })}
-
-                  <div
-                    onClick={() => setStatusFiltroCard('SEM DATA')}
-                    className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group border-l border-gray-800 pl-1"
-                  >
-                    <span className="text-[10px] font-black text-gray-400 mb-1 group-hover:scale-110 transition-all">
-                      {preventivasSemDataFilaGeral.length > 0
-                        ? preventivasSemDataFilaGeral.length
-                        : ''}
-                    </span>
-                    <div
-                      className="w-full max-w-[36px] rounded-t-lg bg-gradient-to-t from-gray-700 via-gray-600 to-gray-400 transition-all group-hover:brightness-125"
-                      style={{
-                        height: `${Math.max(
-                          (preventivasSemDataFilaGeral.length /
-                            maxQtdMesesPrev) *
-                            100,
-                          4
-                        )}%`,
-                      }}
-                    ></div>
-                    <span className="mt-3 text-[10px] font-bold uppercase text-gray-400">
-                      s/m
+            {/* FAIXA COMPACTA DE 5 CARDS */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {[
+                {
+                  id: 'EM DIA',
+                  label: 'EM DIA',
+                  pct: `${pctEmDia}%`,
+                  qtd: qtdEmDiaComData,
+                  grad: 'from-green-500 to-emerald-600 text-white',
+                  ring: 'ring-green-400',
+                },
+                {
+                  id: 'EM EXECUÇÃO',
+                  label: 'EM EXECUÇÃO',
+                  pct: `${pctExecucao}%`,
+                  qtd: qtdExecucaoComData,
+                  grad: 'from-orange-500 to-amber-600 text-white',
+                  ring: 'ring-orange-400',
+                },
+                {
+                  id: 'A VENCER',
+                  label: 'A VENCER',
+                  pct: `${pctAVencer}%`,
+                  qtd: qtdAVencerComData,
+                  grad: 'from-yellow-400 to-yellow-500 text-gray-900',
+                  ring: 'ring-yellow-300',
+                },
+                {
+                  id: 'VENCIDAS',
+                  label: 'VENCIDAS',
+                  pct: `${pctVencidas}%`,
+                  qtd: qtdVencidasComData,
+                  grad: 'from-red-500 to-rose-600 text-white',
+                  ring: 'ring-red-400',
+                },
+                {
+                  id: 'SEM DATA',
+                  label: 'SEM MÊS',
+                  pct: 'PREENCHER',
+                  qtd: preventivasSemDataFilaGeral.length,
+                  grad: 'from-gray-600 to-gray-700 text-white',
+                  ring: 'ring-gray-400',
+                },
+              ].map((c) => (
+                <div
+                  key={c.id}
+                  onClick={() =>
+                    setStatusFiltroCard(
+                      statusFiltroCard === c.id ? 'TODOS' : c.id
+                    )
+                  }
+                  className={`p-3 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
+                    statusFiltroCard === c.id ? `ring-2 ${c.ring}` : ''
+                  } bg-gradient-to-br ${c.grad}`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black">{c.label}</span>
+                    <span className="text-[9px] bg-black/20 px-1.5 py-0.5 rounded font-bold">
+                      {c.pct}
                     </span>
                   </div>
+                  <h3 className="text-2xl font-black mt-1">
+                    {String(c.qtd).padStart(2, '0')}{' '}
+                    <span className="text-[10px] font-normal opacity-80">
+                      Placas
+                    </span>
+                  </h3>
                 </div>
-              </div>
+              ))}
             </div>
 
-            <div className="p-4 rounded-xl border border-gray-800 bg-[#111A33] flex items-center gap-3">
-              <Search size={18} className="text-gray-400" />
-              <input
-                type="text"
-                value={termoBuscaGerencial}
-                onChange={(e) => setTermoBuscaGerencial(e.target.value)}
-                placeholder="Filtrar por Placa ou CDV"
-                className="bg-transparent w-full outline-none text-xs text-white"
-              />
-            </div>
-
-            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
-              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-500/5">
-                <div className="font-bold text-xs uppercase text-gray-400">
-                  Lista:{' '}
-                  <span className="text-blue-400 font-black">
-                    {statusFiltroCard}
-                  </span>{' '}
-                  ({listagemFiltradaCardsChefe.length} Resultados)
+            {/* SPLIT-SCREEN LADO A LADO: GRÁFICO (5 COLUNAS) + TABELA (7 COLUNAS) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+              {/* COLUNA ESQUERDA: GRÁFICO ANUAL */}
+              <div className="lg:col-span-5 p-4 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-xl flex flex-col justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase flex items-center justify-between">
+                    <span>📊 Frota por Mês (2026)</span>
+                    <span className="text-[10px] text-orange-400 font-bold">
+                      Clique na barra p/ filtrar
+                    </span>
+                  </h3>
                 </div>
-              </div>
-              <div className="max-h-[500px] overflow-y-auto">
-                <table className="w-full text-left text-xs table-auto">
-                  <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
-                    <tr>
-                      <th className="p-4">Placa</th>
-                      <th className="p-4">Filial</th>
-                      <th className="p-4">CDV</th>
-                      <th className="p-4">KM Atual</th>
-                      <th className="p-4 text-orange-400">Mês Meta</th>
-                      <th className="p-4">Oficina Destino</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4">Obs 1</th>
-                      <th className="p-4">Obs 2</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {listagemFiltradaCardsChefe.map((p, idx) => (
-                      <tr key={`prev-${p.id || idx}`} className="hover:bg-gray-800/10">
-                        <td className="p-4 font-mono font-bold text-sm">
-                          {p.placa}
-                        </td>
-                        <td className="p-4 uppercase font-semibold text-blue-400">
-                          {p.regional}
-                        </td>
-                        <td className="p-4 uppercase text-gray-400 font-semibold">
-                          {p.cdv}
-                        </td>
-                        <td className="p-4 font-bold text-gray-400">
-                          {p.km || '--'}
-                        </td>
-                        <td className="p-4 text-orange-400 font-black uppercase">
-                          {p.mes_referencia || 'SEM MÊS'}
-                        </td>
-                        <td className="p-4 uppercase text-gray-500">
-                          {p.oficina || '--'}
-                        </td>
-                        <td className="p-4">
+
+                <div className="relative pt-6 pb-2 my-auto">
+                  <div className="h-56 flex items-end justify-between gap-1 px-1 relative z-10 border-b border-gray-700 pb-2">
+                    {contagemPorMesPrev.map((item) => {
+                      const estaSelecionado =
+                        Number(mesSelecionadoHistorico) === item.num;
+                      const alturaPct = Math.max(
+                        (item.qtd / maxQtdMesesPrev) * 100,
+                        4
+                      );
+
+                      return (
+                        <div
+                          key={item.num}
+                          onClick={() => {
+                            setMesSelecionadoHistorico(item.num);
+                            setStatusFiltroCard('TODOS');
+                          }}
+                          className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group"
+                        >
                           <span
-                            className={`text-[10px] font-black px-2 py-0.5 rounded ${
-                              p.status === 'Concluído' || p.status === 'EM DIA'
-                                ? 'bg-green-500/10 text-green-500'
-                                : p.status === 'EM EXECUÇÃO' ||
-                                  p.status === 'OFICINA'
-                                ? 'bg-orange-500/10 text-orange-500'
-                                : p.status === 'A VENCER'
-                                ? 'bg-yellow-500/10 text-yellow-600'
-                                : 'bg-red-50/10 text-red-500'
+                            className={`text-[9px] font-black mb-1 ${
+                              estaSelecionado
+                                ? 'text-orange-400 scale-110'
+                                : 'text-gray-400'
                             }`}
                           >
-                            {p.status === 'Concluído' || p.status === 'EM DIA'
-                              ? 'EM DIA'
-                              : p.status}
+                            {item.qtd > 0 ? item.qtd : ''}
                           </span>
-                        </td>
-                        <td className="p-4 text-gray-400 italic">
-                          {p.observacao || '--'}
-                        </td>
-                        <td className="p-4 text-gray-400 italic">
-                          {p.observacao2 || '--'}
-                        </td>
+                          <div
+                            className={`w-full max-w-[26px] rounded-t-md transition-all ${
+                              estaSelecionado
+                                ? 'bg-gradient-to-t from-rose-600 via-orange-500 to-amber-300 ring-2 ring-orange-400'
+                                : 'bg-gradient-to-t from-rose-900/60 via-orange-600/70 to-amber-500/80 group-hover:brightness-125'
+                            }`}
+                            style={{ height: `${alturaPct}%` }}
+                          ></div>
+                          <span
+                            className={`mt-2 text-[9px] font-bold uppercase ${
+                              estaSelecionado
+                                ? 'text-orange-400 font-black'
+                                : 'text-gray-400'
+                            }`}
+                          >
+                            {item.sigla}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    <div
+                      onClick={() => setStatusFiltroCard('SEM DATA')}
+                      className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group border-l border-gray-800 pl-1"
+                    >
+                      <span className="text-[9px] font-black text-gray-400 mb-1">
+                        {preventivasSemDataFilaGeral.length || ''}
+                      </span>
+                      <div
+                        className="w-full max-w-[26px] rounded-t-md bg-gradient-to-t from-gray-700 to-gray-400"
+                        style={{
+                          height: `${Math.max(
+                            (preventivasSemDataFilaGeral.length /
+                              maxQtdMesesPrev) *
+                              100,
+                            4
+                          )}%`,
+                        }}
+                      ></div>
+                      <span className="mt-2 text-[9px] font-bold uppercase text-gray-400">
+                        s/m
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-gray-400 flex justify-between pt-2">
+                  <span>Total no Mês Selecionado:</span>
+                  <span className="font-black text-white">
+                    {preventivasDoMesHistorico.length} veículos
+                  </span>
+                </div>
+              </div>
+
+              {/* COLUNA DIREITA: TABELA DE PLACAS COM BUSCA INTEGRADA */}
+              <div className="lg:col-span-7 rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl flex flex-col">
+                <div className="p-3 border-b border-gray-800 flex flex-wrap justify-between items-center gap-2 bg-[#111A33]">
+                  <div className="font-bold text-xs uppercase text-gray-300">
+                    Filtro:{' '}
+                    <span className="text-orange-400 font-black">
+                      {statusFiltroCard}
+                    </span>{' '}
+                    ({listagemFiltradaCardsChefe.length})
+                  </div>
+                  <div className="flex items-center gap-2 bg-[#0B1329] px-3 py-1.5 rounded-lg border border-gray-700 w-60">
+                    <Search size={14} className="text-gray-400" />
+                    <input
+                      type="text"
+                      value={termoBuscaGerencial}
+                      onChange={(e) => setTermoBuscaGerencial(e.target.value)}
+                      placeholder="Placa ou CDV..."
+                      className="bg-transparent w-full outline-none text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="h-[340px] overflow-y-auto">
+                  <table className="w-full text-left text-xs table-auto">
+                    <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
+                      <tr>
+                        <th className="p-3">Placa</th>
+                        <th className="p-3">Filial / CDV</th>
+                        <th className="p-3">Oficina</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3">Observação</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {listagemFiltradaCardsChefe.map((p, idx) => (
+                        <tr
+                          key={`prev-${p.id || idx}`}
+                          className="hover:bg-gray-800/20"
+                        >
+                          <td className="p-3 font-mono font-bold text-white">
+                            {p.placa}
+                          </td>
+                          <td className="p-3 uppercase">
+                            <span className="text-blue-400 font-bold block">
+                              {p.regional}
+                            </span>
+                            <span className="text-[10px] text-gray-400">
+                              {p.cdv}
+                            </span>
+                          </td>
+                          <td className="p-3 uppercase text-gray-300">
+                            {p.oficina || '--'}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                                p.status === 'Concluído' ||
+                                p.status === 'EM DIA'
+                                  ? 'bg-green-500/15 text-green-400'
+                                  : p.status === 'EM EXECUÇÃO' ||
+                                    p.status === 'OFICINA'
+                                  ? 'bg-orange-500/15 text-orange-400'
+                                  : p.status === 'A VENCER'
+                                  ? 'bg-yellow-500/15 text-yellow-400'
+                                  : 'bg-red-500/15 text-red-400'
+                              }`}
+                            >
+                              {p.status === 'Concluído' || p.status === 'EM DIA'
+                                ? 'EM DIA'
+                                : p.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-gray-400 italic truncate max-w-[160px]">
+                            {p.observacao || p.observacao2 || '--'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* ============================================================================ */}
-        {/* --- TELA 3: ABA STATUS TACÓGRAFOS --- */}
+        {/* --- TELA 3: STATUS TACÓGRAFOS (SPLIT-SCREEN: GRÁFICO ESQ + TABELA DIR) --- */}
         {/* ============================================================================ */}
         {activeTab === 'status_tacografos' && (
-          <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-bold tracking-tight text-white">
-                    Cronograma de Tacógrafos
-                  </h2>
-                  <span className="text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-full font-bold">
-                    🕒 Última atualização: {ultimaAtuTaco}
-                  </span>
-                </div>
-                <p className="text-gray-400 text-xs mt-0.5">
-                  Indicadores operacionais e controle por mês e ano ({tacografos.length} veículos carregados).
-                </p>
+          <div className="w-full animate-fadeIn space-y-3">
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-black tracking-tight text-white">
+                  Cronograma de Tacógrafos
+                </h2>
+                <span className="text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                  🕒 {ultimaAtuTaco} ({tacografos.length} veículos)
+                </span>
               </div>
-              <div className="flex items-center gap-2 p-2 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
                 <Clock size={14} className="text-[#0000FF]" />
                 <span className="text-gray-400 text-[11px]">Mês:</span>
                 <select
@@ -4254,554 +4303,453 @@ function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <div
-                onClick={() =>
-                  setStatusFiltroCardTaco(
-                    statusFiltroCardTaco === 'EM DIA' ? 'TODOS' : 'EM DIA'
-                  )
-                }
-                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCardTaco === 'EM DIA'
-                    ? 'ring-4 ring-green-400'
-                    : ''
-                } bg-gradient-to-br from-green-500 to-emerald-600 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-black">EM DIA</span>
-                  <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded font-bold">
-                    {pctTacoEmDia}%
-                  </span>
+            {/* FAIXA COMPACTA DE 6 CARDS */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+              {[
+                {
+                  id: 'EM DIA',
+                  label: 'EM DIA',
+                  pct: `${pctTacoEmDia}%`,
+                  qtd: qtdTacoEmDiaComData,
+                  grad: 'from-green-500 to-emerald-600 text-white',
+                },
+                {
+                  id: 'EM EXECUÇÃO',
+                  label: 'EM EXEC.',
+                  pct: `${pctTacoExecucao}%`,
+                  qtd: qtdTacoExecucaoComData,
+                  grad: 'from-orange-500 to-amber-600 text-white',
+                },
+                {
+                  id: 'A VENCER',
+                  label: 'A VENCER',
+                  pct: `${pctTacoAVencer}%`,
+                  qtd: qtdTacoAVencerComData,
+                  grad: 'from-yellow-400 to-yellow-500 text-gray-900',
+                },
+                {
+                  id: 'VENCIDAS',
+                  label: 'VENCIDAS',
+                  pct: `${pctTacoVencidas}%`,
+                  qtd: qtdTacoVencidasComData,
+                  grad: 'from-red-500 to-rose-600 text-white',
+                },
+                {
+                  id: 'FUTUROS',
+                  label: '2027+ FUTUROS',
+                  pct: 'VALIDADE',
+                  qtd: tacosAnosFuturos.length,
+                  grad: 'from-blue-600 to-indigo-700 text-white',
+                },
+                {
+                  id: 'SEM DATA',
+                  label: 'SEM MÊS',
+                  pct: 'PREENCHER',
+                  qtd: tacosSemDataFilaGeral.length,
+                  grad: 'from-gray-600 to-gray-700 text-white',
+                },
+              ].map((c) => (
+                <div
+                  key={c.id}
+                  onClick={() =>
+                    setStatusFiltroCardTaco(
+                      statusFiltroCardTaco === c.id ? 'TODOS' : c.id
+                    )
+                  }
+                  className={`p-3 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
+                    statusFiltroCardTaco === c.id ? 'ring-2 ring-white' : ''
+                  } bg-gradient-to-br ${c.grad}`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black">{c.label}</span>
+                    <span className="text-[8px] bg-black/20 px-1 py-0.5 rounded font-bold">
+                      {c.pct}
+                    </span>
+                  </div>
+                  <h3 className="text-2xl font-black mt-1">
+                    {String(c.qtd).padStart(2, '0')}{' '}
+                    <span className="text-[9px] font-normal opacity-80">
+                      Placas
+                    </span>
+                  </h3>
                 </div>
-                <h3 className="text-2xl font-black mt-2">
-                  {String(qtdTacoEmDiaComData).padStart(2, '0')}{' '}
-                  <span className="text-[9px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-
-              <div
-                onClick={() =>
-                  setStatusFiltroCardTaco(
-                    statusFiltroCardTaco === 'EM EXECUÇÃO'
-                      ? 'TODOS'
-                      : 'EM EXECUÇÃO'
-                  )
-                }
-                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCardTaco === 'EM EXECUÇÃO'
-                    ? 'ring-4 ring-orange-400'
-                    : ''
-                } bg-gradient-to-br from-orange-500 to-amber-600 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-black">EM EXEC.</span>
-                  <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded font-bold">
-                    {pctTacoExecucao}%
-                  </span>
-                </div>
-                <h3 className="text-2xl font-black mt-2">
-                  {String(qtdTacoExecucaoComData).padStart(2, '0')}{' '}
-                  <span className="text-[9px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-
-              <div
-                onClick={() =>
-                  setStatusFiltroCardTaco(
-                    statusFiltroCardTaco === 'A VENCER' ? 'TODOS' : 'A VENCER'
-                  )
-                }
-                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCardTaco === 'A VENCER'
-                    ? 'ring-4 ring-yellow-400'
-                    : ''
-                } bg-gradient-to-br from-yellow-400 to-yellow-500 text-gray-900`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-black">A VENCER</span>
-                  <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded font-bold">
-                    {pctTacoAVencer}%
-                  </span>
-                </div>
-                <h3 className="text-2xl font-black mt-2">
-                  {String(qtdTacoAVencerComData).padStart(2, '0')}{' '}
-                  <span className="text-[9px] font-normal opacity-70">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-
-              <div
-                onClick={() =>
-                  setStatusFiltroCardTaco(
-                    statusFiltroCardTaco === 'VENCIDAS' ? 'TODOS' : 'VENCIDAS'
-                  )
-                }
-                className={`p-3.5 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  statusFiltroCardTaco === 'VENCIDAS'
-                    ? 'ring-4 ring-red-500'
-                    : ''
-                } bg-gradient-to-br from-red-500 to-rose-600 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-black">VENCIDAS</span>
-                  <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded font-bold">
-                    {pctTacoVencidas}%
-                  </span>
-                </div>
-                <h3 className="text-2xl font-black mt-2">
-                  {String(qtdTacoVencidasComData).padStart(2, '0')}{' '}
-                  <span className="text-[9px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-
-              <div
-                onClick={() =>
-                  setStatusFiltroCardTaco(
-                    statusFiltroCardTaco === 'FUTUROS' ? 'TODOS' : 'FUTUROS'
-                  )
-                }
-                className={`p-3.5 rounded-xl shadow-sm border border-blue-500/30 cursor-pointer transition-all ${
-                  statusFiltroCardTaco === 'FUTUROS'
-                    ? 'ring-4 ring-blue-400'
-                    : ''
-                } bg-gradient-to-br from-blue-600 to-indigo-700 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-black text-blue-200">
-                    2027+ FUTUROS
-                  </span>
-                  <span className="text-[8px] bg-black/20 text-blue-200 px-1 py-0.5 rounded font-black">
-                    VALIDADE
-                  </span>
-                </div>
-                <h3 className="text-2xl font-black mt-2">
-                  {String(tacosAnosFuturos.length).padStart(2, '0')}{' '}
-                  <span className="text-[9px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
-
-              <div
-                onClick={() =>
-                  setStatusFiltroCardTaco(
-                    statusFiltroCardTaco === 'SEM DATA' ? 'TODOS' : 'SEM DATA'
-                  )
-                }
-                className={`p-3.5 rounded-xl shadow-sm border border-gray-400 cursor-pointer transition-all ${
-                  statusFiltroCardTaco === 'SEM DATA'
-                    ? 'ring-4 ring-gray-400'
-                    : ''
-                } bg-gradient-to-br from-gray-600 to-gray-700 text-white`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-[10px] font-black text-gray-300">
-                    SEM MÊS
-                  </span>
-                  <span className="text-[8px] bg-black/20 text-blue-400 px-1 py-0.5 rounded font-black">
-                    FILA VIVA
-                  </span>
-                </div>
-                <h3 className="text-2xl font-black mt-2">
-                  {String(tacosSemDataFilaGeral.length).padStart(2, '0')}{' '}
-                  <span className="text-[9px] font-normal opacity-80">
-                    Placas
-                  </span>
-                </h3>
-              </div>
+              ))}
             </div>
 
-            <div className="p-6 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-2xl relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
-                <div>
-                  <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                    <span>📊 Visão Geral</span>
-                  </h3>
-                  <p className="text-xs text-gray-400">
-                    Frota por mês (Clique em uma coluna para selecionar o mês)
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 bg-[#0B1329] p-1.5 rounded-xl border border-gray-800">
-                  <span className="text-[10px] font-bold text-gray-400 px-2 uppercase">
+            {/* SPLIT-SCREEN: GRÁFICO (5 COLUNAS) + TABELA (7 COLUNAS) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+              <div className="lg:col-span-5 p-4 rounded-2xl border border-gray-800/80 bg-[#131B35] shadow-xl flex flex-col justify-between">
+                <h3 className="text-sm font-black text-white uppercase flex items-center justify-between">
+                  <span>📊 Cronograma Anual (Tacógrafos)</span>
+                  <span className="text-[10px] text-amber-400 font-bold">
                     Visão 2026
                   </span>
-                </div>
-              </div>
+                </h3>
 
-              <div className="relative pt-6 pb-2">
-                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20 border-b border-gray-700">
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                  <div className="border-b border-gray-600 w-full"></div>
-                </div>
+                <div className="relative pt-6 pb-2 my-auto">
+                  <div className="h-56 flex items-end justify-between gap-1 px-1 relative z-10 border-b border-gray-700 pb-2">
+                    {contagemPorMesTaco.map((item) => {
+                      const estaSelecionado =
+                        Number(mesSelecionadoTacoGerencial) === item.num;
+                      const alturaPct = Math.max(
+                        (item.qtd / maxQtdMesesTaco) * 100,
+                        4
+                      );
 
-                <div className="h-48 flex items-end justify-between gap-1.5 sm:gap-2 px-2 relative z-10">
-                  {contagemPorMesTaco.map((item) => {
-                    const estaSelecionado =
-                      Number(mesSelecionadoTacoGerencial) === item.num;
-                    const alturaPct = Math.max(
-                      (item.qtd / maxQtdMesesTaco) * 100,
-                      4
-                    );
-
-                    return (
-                      <div
-                        key={item.num}
-                        onClick={() => {
-                          setMesSelecionadoTacoGerencial(item.num);
-                          setStatusFiltroCardTaco('TODOS');
-                        }}
-                        className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group"
-                      >
-                        <span
-                          className={`text-[10px] font-black mb-1 transition-all ${
-                            estaSelecionado
-                              ? 'text-amber-400 scale-125'
-                              : 'text-gray-400 group-hover:text-white'
-                          }`}
-                        >
-                          {item.qtd > 0 ? item.qtd : ''}
-                        </span>
-
+                      return (
                         <div
-                          className={`w-full max-w-[36px] rounded-t-lg transition-all duration-300 ${
-                            estaSelecionado
-                              ? 'bg-gradient-to-t from-rose-600 via-orange-500 to-amber-300 ring-2 ring-amber-400 shadow-lg shadow-orange-500/30'
-                              : 'bg-gradient-to-t from-rose-900/60 via-orange-600/70 to-amber-500/80 group-hover:from-rose-600 group-hover:to-amber-400'
-                          }`}
-                          style={{ height: `${alturaPct}%` }}
-                        ></div>
-
-                        <span
-                          className={`mt-3 text-[11px] font-bold uppercase transition-all ${
-                            estaSelecionado
-                              ? 'text-amber-400 font-black'
-                              : 'text-gray-400 group-hover:text-white'
-                          }`}
+                          key={item.num}
+                          onClick={() => {
+                            setMesSelecionadoTacoGerencial(item.num);
+                            setStatusFiltroCardTaco('TODOS');
+                          }}
+                          className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group"
                         >
-                          {item.sigla}
-                        </span>
-                      </div>
-                    );
-                  })}
-
-                  <div
-                    onClick={() => setStatusFiltroCardTaco('FUTUROS')}
-                    className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group border-l border-gray-800 pl-1"
-                  >
-                    <span className="text-[10px] font-black text-blue-400 mb-1 group-hover:scale-110 transition-all">
-                      {tacosAnosFuturos.length > 0
-                        ? tacosAnosFuturos.length
-                        : ''}
-                    </span>
-                    <div
-                      className="w-full max-w-[36px] rounded-t-lg bg-gradient-to-t from-blue-900 via-indigo-600 to-cyan-400 transition-all group-hover:brightness-125"
-                      style={{
-                        height: `${Math.max(
-                          (tacosAnosFuturos.length / maxQtdMesesTaco) * 100,
-                          4
-                        )}%`,
-                      }}
-                    ></div>
-                    <span className="mt-3 text-[10px] font-black uppercase text-blue-400">
-                      27+
-                    </span>
-                  </div>
-
-                  <div
-                    onClick={() => setStatusFiltroCardTaco('SEM DATA')}
-                    className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer group border-l border-gray-800 pl-1"
-                  >
-                    <span className="text-[10px] font-black text-gray-400 mb-1 group-hover:scale-110 transition-all">
-                      {tacosSemDataFilaGeral.length > 0
-                        ? tacosSemDataFilaGeral.length
-                        : ''}
-                    </span>
-                    <div
-                      className="w-full max-w-[36px] rounded-t-lg bg-gradient-to-t from-gray-700 via-gray-600 to-gray-400 transition-all group-hover:brightness-125"
-                      style={{
-                        height: `${Math.max(
-                          (tacosSemDataFilaGeral.length / maxQtdMesesTaco) *
-                            100,
-                          4
-                        )}%`,
-                      }}
-                    ></div>
-                    <span className="mt-3 text-[10px] font-bold uppercase text-gray-400">
-                      s/m
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl border border-gray-800 bg-[#111A33] flex items-center gap-3">
-              <Search size={18} className="text-gray-400" />
-              <input
-                type="text"
-                value={termoBuscaGerencialTaco}
-                onChange={(e) => setTermoBuscaGerencialTaco(e.target.value)}
-                placeholder="Filtrar por Placa ou CDV"
-                className="bg-transparent w-full outline-none text-xs text-white"
-              />
-            </div>
-
-            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
-              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-500/5">
-                <div className="font-bold text-xs uppercase text-gray-400">
-                  Lista:{' '}
-                  <span className="text-blue-400 font-black">
-                    {statusFiltroCardTaco}
-                  </span>{' '}
-                  ({listagemFiltradaTacosChefe.length} Resultados)
-                </div>
-              </div>
-              <div className="max-h-[500px] overflow-y-auto">
-                <table className="w-full text-left text-xs table-auto">
-                  <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
-                    <tr>
-                      <th className="p-4">Placa</th>
-                      <th className="p-4">Modelo</th>
-                      <th className="p-4">CDV</th>
-                      <th className="p-4 text-blue-400">Filial</th>
-                      <th className="p-4">Mês / Ano Meta</th>
-                      <th className="p-4">Validade</th>
-                      <th className="p-4">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {listagemFiltradaTacosChefe.map((t, idx) => (
-                      <tr
-                        key={`taco-ger-${t.id || idx}`}
-                        className="hover:bg-gray-800/10"
-                      >
-                        <td className="p-4 font-mono font-bold text-sm">
-                          {t.placa}
-                        </td>
-                        <td className="p-4 text-gray-400 uppercase">
-                          {t.modelo || 'CAMINHÃO'}
-                        </td>
-                        <td className="p-4 uppercase">{t.cdv}</td>
-                        <td className="p-4 uppercase text-blue-400 font-semibold">
-                          {t.regional}
-                        </td>
-                        <td className="p-4 text-blue-400 font-black uppercase">
-                          {t.mes_referencia || 'SEM MÊS'}
-                        </td>
-                        <td className="p-4 font-bold">
-                          {t.validade
-                            ? new Date(
-                                t.validade + 'T00:00:00'
-                              ).toLocaleDateString('pt-BR')
-                            : '--'}
-                        </td>
-                        <td className="p-4">
                           <span
-                            className={`text-[10px] font-black px-2 py-0.5 rounded ${
-                              t.status === 'Concluído' || t.status === 'EM DIA'
-                                ? 'bg-green-500/10 text-green-500'
-                                : t.status === 'EM EXECUÇÃO' ||
-                                  t.status === 'OFICINA'
-                                ? 'bg-orange-500/10 text-orange-500'
-                                : t.status === 'A VENCER'
-                                ? 'bg-yellow-500/10 text-yellow-600'
-                                : 'bg-red-50/10 text-red-500'
+                            className={`text-[9px] font-black mb-1 ${
+                              estaSelecionado
+                                ? 'text-amber-400 scale-110'
+                                : 'text-gray-400'
                             }`}
                           >
-                            {t.status === 'Concluído' || t.status === 'EM DIA'
-                              ? 'EM DIA'
-                              : t.status}
+                            {item.qtd > 0 ? item.qtd : ''}
                           </span>
-                        </td>
+                          <div
+                            className={`w-full max-w-[24px] rounded-t-md transition-all ${
+                              estaSelecionado
+                                ? 'bg-gradient-to-t from-rose-600 via-orange-500 to-amber-300 ring-2 ring-amber-400'
+                                : 'bg-gradient-to-t from-rose-900/60 via-orange-600/70 to-amber-500/80'
+                            }`}
+                            style={{ height: `${alturaPct}%` }}
+                          ></div>
+                          <span
+                            className={`mt-2 text-[9px] font-bold uppercase ${
+                              estaSelecionado
+                                ? 'text-amber-400 font-black'
+                                : 'text-gray-400'
+                            }`}
+                          >
+                            {item.sigla}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    <div
+                      onClick={() => setStatusFiltroCardTaco('FUTUROS')}
+                      className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer border-l border-gray-800 pl-1"
+                    >
+                      <span className="text-[9px] font-black text-blue-400 mb-1">
+                        {tacosAnosFuturos.length || ''}
+                      </span>
+                      <div
+                        className="w-full max-w-[24px] rounded-t-md bg-gradient-to-t from-blue-900 to-cyan-400"
+                        style={{
+                          height: `${Math.max(
+                            (tacosAnosFuturos.length / maxQtdMesesTaco) * 100,
+                            4
+                          )}%`,
+                        }}
+                      ></div>
+                      <span className="mt-2 text-[9px] font-black text-blue-400">
+                        27+
+                      </span>
+                    </div>
+
+                    <div
+                      onClick={() => setStatusFiltroCardTaco('SEM DATA')}
+                      className="flex-1 flex flex-col items-center h-full justify-end cursor-pointer border-l border-gray-800 pl-1"
+                    >
+                      <span className="text-[9px] font-black text-gray-400 mb-1">
+                        {tacosSemDataFilaGeral.length || ''}
+                      </span>
+                      <div
+                        className="w-full max-w-[24px] rounded-t-md bg-gradient-to-t from-gray-700 to-gray-400"
+                        style={{
+                          height: `${Math.max(
+                            (tacosSemDataFilaGeral.length / maxQtdMesesTaco) *
+                              100,
+                            4
+                          )}%`,
+                        }}
+                      ></div>
+                      <span className="mt-2 text-[9px] font-bold text-gray-400">
+                        s/m
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-gray-400 flex justify-between pt-2">
+                  <span>Total Mapeado em Tacógrafos:</span>
+                  <span className="font-black text-white">
+                    {tacografos.length} veículos
+                  </span>
+                </div>
+              </div>
+
+              <div className="lg:col-span-7 rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl flex flex-col">
+                <div className="p-3 border-b border-gray-800 flex flex-wrap justify-between items-center gap-2 bg-[#111A33]">
+                  <div className="font-bold text-xs uppercase text-gray-300">
+                    Lista:{' '}
+                    <span className="text-amber-400 font-black">
+                      {statusFiltroCardTaco}
+                    </span>{' '}
+                    ({listagemFiltradaTacosChefe.length})
+                  </div>
+                  <div className="flex items-center gap-2 bg-[#0B1329] px-3 py-1.5 rounded-lg border border-gray-700 w-60">
+                    <Search size={14} className="text-gray-400" />
+                    <input
+                      type="text"
+                      value={termoBuscaGerencialTaco}
+                      onChange={(e) =>
+                        setTermoBuscaGerencialTaco(e.target.value)
+                      }
+                      placeholder="Placa ou CDV..."
+                      className="bg-transparent w-full outline-none text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="h-[340px] overflow-y-auto">
+                  <table className="w-full text-left text-xs table-auto">
+                    <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
+                      <tr>
+                        <th className="p-3">Placa</th>
+                        <th className="p-3">Modelo</th>
+                        <th className="p-3">CDV / Filial</th>
+                        <th className="p-3">Validade</th>
+                        <th className="p-3">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {listagemFiltradaTacosChefe.map((t, idx) => (
+                        <tr
+                          key={`taco-ger-${t.id || idx}`}
+                          className="hover:bg-gray-800/20"
+                        >
+                          <td className="p-3 font-mono font-bold text-white">
+                            {t.placa}
+                          </td>
+                          <td className="p-3 text-gray-300 uppercase">
+                            {t.modelo || 'CAMINHÃO'}
+                          </td>
+                          <td className="p-3 uppercase">
+                            <span className="text-blue-400 font-bold block">
+                              {t.regional}
+                            </span>
+                            <span className="text-[10px] text-gray-400">
+                              {t.cdv}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold">
+                            {t.validade
+                              ? new Date(
+                                  t.validade + 'T00:00:00'
+                                ).toLocaleDateString('pt-BR')
+                              : '--'}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                                t.status === 'Concluído' ||
+                                t.status === 'EM DIA'
+                                  ? 'bg-green-500/15 text-green-400'
+                                  : t.status === 'EM EXECUÇÃO' ||
+                                    t.status === 'OFICINA'
+                                  ? 'bg-orange-500/15 text-orange-400'
+                                  : t.status === 'A VENCER'
+                                  ? 'bg-yellow-500/15 text-yellow-400'
+                                  : 'bg-red-500/15 text-red-400'
+                              }`}
+                            >
+                              {t.status === 'Concluído' || t.status === 'EM DIA'
+                                ? 'EM DIA'
+                                : t.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* ============================================================================ */}
-        {/* --- TELA 4: ABA STATUS FINANCEIRO --- */}
+        {/* --- TELA 4: STATUS FINANCEIRO (COCKPIT COMPACTO COM GAVETA & ABAS) --- */}
         {/* ============================================================================ */}
         {activeTab === 'status_financeiro' && (
-          <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-800 pb-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                    <DollarSign className="text-rose-400" size={26} />
-                    <span>Status Financeiro & Divisão de Rateio</span>
-                  </h2>
-                  <span className="text-[10px] bg-rose-500/15 text-rose-300 border border-rose-500/30 px-2.5 py-1 rounded-full font-bold">
-                    🕒 Última atualização: {ultimaAtuFin}
-                  </span>
-                </div>
-                <p className="text-gray-400 text-xs mt-0.5">
-                  Leitura direta da aba "DIVISÃO RATEIO", alertas críticos "CTA", Orçamento por CDV e auditoria "BASE (SUL II)".
-                </p>
+          <div className="w-full animate-fadeIn space-y-3">
+            {/* CABEÇALHO COMPACTO COM BOTÃO DE GAVETA DE UPLOAD E ALERTA CTA */}
+            <div className="flex flex-wrap justify-between items-center gap-2 border-b border-gray-800 pb-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <DollarSign className="text-rose-400" size={22} />
+                <h2 className="text-xl font-black tracking-tight text-white">
+                  Status Financeiro & Rateio
+                </h2>
+                <span className="text-[10px] bg-rose-500/15 text-rose-300 border border-rose-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                  🕒 {ultimaAtuFin}
+                </span>
               </div>
-              <div className="flex items-center gap-2 p-2 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
-                <Clock size={14} className="text-rose-400" />
-                <span className="text-gray-400 text-[11px]">Mês Foco:</span>
-                <select
-                  value={mesSelecionadoFinanceiro}
-                  onChange={(e) => {
-                    setMesSelecionadoFinanceiro(Number(e.target.value));
-                    setContaFiltroFinanceiro('TODAS');
-                    setNfFiltroFinanceiro('TODAS');
-                    setCdvFiltroFinanceiro('TODOS');
-                  }}
-                  className="bg-transparent outline-none cursor-pointer font-black text-rose-400 uppercase"
-                >
-                  {mesesDoAno.map((m) => (
-                    <option
-                      key={m.num}
-                      value={m.num}
-                      className="bg-[#1C2541] text-white"
-                    >
-                      {m.nome}{' '}
-                      {mesOficialRateio === m.num ? '(Rateio Oficial)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
 
-            <div className="p-5 bg-[#1C2541] border border-gray-800 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="flex-1">
-                <h3 className="text-sm font-black uppercase text-rose-400">
-                  💸 Importar Planilha Financeira (OS's - SUL2 - 2026)
-                </h3>
-                <p className="text-[11px] opacity-70 mt-1">
-                  Carrega simultaneamente as abas "DIVISÃO RATEIO", "CTA", "Posição Nacional" e "BASE (SUL II)".
-                </p>
-                <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-gray-400">
-                  <input
-                    type="checkbox"
-                    checked={substituirFinanceiro}
-                    onChange={(e) => setSubstituirFinanceiro(e.target.checked)}
-                    className="accent-rose-500"
-                  />
-                  Substituir dados financeiros atuais
-                </label>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-                <button
-                  onClick={limparTodaTabelaFinanceiro}
-                  className="bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
-                >
-                  <Trash2 size={14} /> Limpar Banco
-                </button>
-                <label className="bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-500 hover:to-orange-400 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer flex items-center gap-1.5 transition-all shadow-lg shadow-rose-600/20">
-                  <Upload size={14} />
-                  Carregar Excel Financeiro
-                  <input
-                    type="file"
-                    accept=".xlsx, .xls"
-                    onChange={lidarComImportacaoFinanceiro}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </div>
-
-            {finCta.length > 0 && (
-              <div className="p-5 rounded-2xl border-2 border-red-500/60 bg-gradient-to-r from-red-950/80 via-[#1C2541] to-[#1C2541] shadow-xl relative overflow-hidden">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="p-2 rounded-xl bg-red-600 text-white animate-pulse">
-                      <AlertTriangle size={18} />
+              <div className="flex flex-wrap items-center gap-2">
+                {finCta.length > 0 && (
+                  <button
+                    onClick={() => setMostrarCtaExpandido(!mostrarCtaExpandido)}
+                    className="px-3 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-300 text-xs font-black flex items-center gap-1.5 animate-pulse"
+                  >
+                    <AlertTriangle size={14} className="text-red-400" />
+                    <span>
+                      🚨 {finCta.length} CTA Críticos (
+                      {formatarMoeda(
+                        finCta.reduce(
+                          (acc, c) => acc + (Number(c.valor) || 0),
+                          0
+                        )
+                      )}
+                      ) {mostrarCtaExpandido ? '▴' : '▾'}
                     </span>
-                    <div>
-                      <h3 className="text-sm font-black uppercase text-red-400 tracking-wide">
-                        🚨 Call To Action (CTA) — Veículos Críticos Aguardando Decisão
-                      </h3>
-                      <p className="text-[11px] text-gray-300">
-                        Ordens de serviço de alto impacto sinalizadas na aba CTA da planilha
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-black bg-red-600/20 text-red-300 border border-red-500/30 px-3 py-1 rounded-full">
-                    Total Travado:{' '}
-                    {formatarMoeda(
-                      finCta.reduce((acc, c) => acc + (Number(c.valor) || 0), 0)
-                    )}
-                  </span>
-                </div>
+                  </button>
+                )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                  {finCta.map((item, idx) => (
-                    <div
-                      key={item.id || idx}
-                      onClick={() => setTermoBuscaFinanceiro(item.placa)}
-                      className="p-3.5 rounded-xl bg-[#0B1329]/90 border border-red-500/30 hover:border-red-400 cursor-pointer transition-all flex justify-between items-center gap-3"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-black text-sm text-white bg-red-600/30 px-2 py-0.5 rounded border border-red-500/40">
-                            {item.placa}
-                          </span>
-                          <span className="text-xs font-black text-amber-400 uppercase">
-                            {item.servico}
-                          </span>
-                          <span className="text-[10px] font-bold text-gray-400">
-                            OS: {item.os}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-gray-300 font-semibold">
-                          🏢 {item.oficina}
-                        </p>
-                        <p className="text-[11px] text-red-300 italic">
-                          ⚠️ Impacto: {item.acao}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-red-500/20 text-red-400 uppercase block mb-1">
-                          {item.status}
-                        </span>
-                        <span className="text-base font-black text-white">
-                          {formatarMoeda(item.valor)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                <button
+                  onClick={() =>
+                    setMostrarGavetaUploadFin(!mostrarGavetaUploadFin)
+                  }
+                  className="px-3 py-1.5 rounded-xl bg-[#1C2541] hover:bg-gray-800 border border-gray-700 text-rose-300 text-xs font-black flex items-center gap-1.5"
+                >
+                  <Upload size={13} />
+                  <span>Importar / Banco {mostrarGavetaUploadFin ? '▴' : '▾'}</span>
+                </button>
+
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-800 bg-[#1C2541] text-xs font-bold text-white">
+                  <Clock size={13} className="text-rose-400" />
+                  <select
+                    value={mesSelecionadoFinanceiro}
+                    onChange={(e) => {
+                      setMesSelecionadoFinanceiro(Number(e.target.value));
+                      setContaFiltroFinanceiro('TODAS');
+                      setNfFiltroFinanceiro('TODAS');
+                      setCdvFiltroFinanceiro('TODOS');
+                    }}
+                    className="bg-transparent outline-none cursor-pointer font-black text-rose-400 uppercase"
+                  >
+                    {mesesDoAno.map((m) => (
+                      <option
+                        key={m.num}
+                        value={m.num}
+                        className="bg-[#1C2541] text-white"
+                      >
+                        {m.nome} {mesOficialRateio === m.num ? '(Oficial)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* GAVETA RETRÁTIL DE IMPORTAÇÃO FINANCEIRA */}
+            {mostrarGavetaUploadFin && (
+              <div className="p-3.5 bg-[#1C2541] border border-rose-500/30 rounded-xl flex flex-wrap justify-between items-center gap-3 animate-fadeIn">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-black uppercase text-rose-400">
+                    💸 Planilha OS's - SUL2 - 2026:
+                  </span>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={substituirFinanceiro}
+                      onChange={(e) =>
+                        setSubstituirFinanceiro(e.target.checked)
+                      }
+                      className="accent-rose-500"
+                    />
+                    Substituir base atual
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={limparTodaTabelaFinanceiro}
+                    className="bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-3 py-1.5 rounded-lg flex items-center gap-1"
+                  >
+                    <Trash2 size={13} /> Limpar Banco
+                  </button>
+                  <label className="bg-gradient-to-r from-rose-600 to-orange-500 text-white font-black text-xs px-3.5 py-1.5 rounded-lg cursor-pointer flex items-center gap-1.5">
+                    <Upload size={13} />
+                    Selecionar Excel Financeiro
+                    <input
+                      type="file"
+                      accept=".xlsx, .xls"
+                      onChange={lidarComImportacaoFinanceiro}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* GAVETA RETRÁTIL DE ALERTAS CTA */}
+            {mostrarCtaExpandido && finCta.length > 0 && (
+              <div className="p-3.5 rounded-xl border border-red-500/50 bg-[#1C2541] grid grid-cols-1 md:grid-cols-3 gap-2.5 animate-fadeIn">
+                {finCta.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    onClick={() => {
+                      setTermoBuscaFinanceiro(item.placa);
+                      setSubVisaoFinanceiro('AUDITORIA_OS');
+                    }}
+                    className="p-2.5 rounded-lg bg-[#0B1329] border border-red-500/30 hover:border-red-400 cursor-pointer flex justify-between items-center gap-2"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-black text-xs text-white bg-red-600/30 px-1.5 py-0.5 rounded">
+                          {item.placa}
+                        </span>
+                        <span className="text-[10px] font-black text-amber-400 uppercase">
+                          {item.servico}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 truncate max-w-[160px] mt-0.5">
+                        {item.oficina}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[9px] font-black text-red-400 block">
+                        {item.status}
+                      </span>
+                      <span className="text-xs font-black text-white">
+                        {formatarMoeda(item.valor)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 4 CARDS EXECUTIVOS COMPACTOS */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div
                 onClick={() => {
                   setContaFiltroFinanceiro('TODAS');
                   setNfFiltroFinanceiro('TODAS');
                   setCdvFiltroFinanceiro('TODOS');
                 }}
-                className="p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer bg-gradient-to-br from-blue-600 to-indigo-700 text-white"
+                className="p-3 rounded-xl border border-gray-800 cursor-pointer bg-gradient-to-br from-blue-600 to-indigo-700 text-white"
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black uppercase">
                     ORÇAMENTO (AOP + PROV)
                   </span>
                   <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
-                    META MÊS {mesSelecionadoFinanceiro}
+                    MÊS {mesSelecionadoFinanceiro}
                   </span>
                 </div>
-                <h3 className="text-2xl font-black mt-3">
+                <h3 className="text-xl font-black mt-1">
                   {formatarMoeda(totalOrcamentoMes)}
                 </h3>
-                <p className="text-[10px] opacity-80 mt-1">
-                  Teto liberado para SUL2
-                </p>
               </div>
 
               <div
@@ -4810,17 +4758,17 @@ function App() {
                     nfFiltroFinanceiro === 'COBRADAS' ? 'TODAS' : 'COBRADAS'
                   )
                 }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
+                className={`p-3 rounded-xl border border-gray-800 cursor-pointer ${
                   nfFiltroFinanceiro === 'COBRADAS'
-                    ? 'ring-4 ring-emerald-400'
+                    ? 'ring-2 ring-emerald-400'
                     : ''
                 } bg-gradient-to-br from-emerald-600 to-teal-700 text-white`}
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">
-                    FATURADO (NFs 1/4 A 4/4)
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black uppercase">
+                    FATURADO (NFs)
                   </span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
                     {totalOrcamentoMes > 0
                       ? (
                           (totalFaturadoNFsMes / totalOrcamentoMes) *
@@ -4830,12 +4778,9 @@ function App() {
                     %
                   </span>
                 </div>
-                <h3 className="text-2xl font-black mt-3">
+                <h3 className="text-xl font-black mt-1">
                   {formatarMoeda(totalFaturadoNFsMes)}
                 </h3>
-                <p className="text-[10px] opacity-80 mt-1">
-                  Notas Fiscais já cobradas
-                </p>
               </div>
 
               <div
@@ -4844,15 +4789,15 @@ function App() {
                     nfFiltroFinanceiro === 'PEND' ? 'TODAS' : 'PEND'
                   )
                 }
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 cursor-pointer transition-all ${
-                  nfFiltroFinanceiro === 'PEND' ? 'ring-4 ring-amber-400' : ''
+                className={`p-3 rounded-xl border border-gray-800 cursor-pointer ${
+                  nfFiltroFinanceiro === 'PEND' ? 'ring-2 ring-amber-400' : ''
                 } bg-gradient-to-br from-orange-500 to-amber-600 text-white`}
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black uppercase">
                     PENDENTE (PEND)
                   </span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
                     {totalOrcamentoMes > 0
                       ? ((totalPendenteMes / totalOrcamentoMes) * 100).toFixed(
                           1
@@ -4861,428 +4806,543 @@ function App() {
                     %
                   </span>
                 </div>
-                <h3 className="text-2xl font-black mt-3">
+                <h3 className="text-xl font-black mt-1">
                   {formatarMoeda(totalPendenteMes)}
                 </h3>
-                <p className="text-[10px] opacity-80 mt-1">
-                  Concluídas não cobradas / Em aberto
-                </p>
               </div>
 
               <div
-                className={`p-4 rounded-xl shadow-sm border border-gray-800 ${
+                className={`p-3 rounded-xl border border-gray-800 ${
                   saldoFinalMes >= 0
                     ? 'bg-gradient-to-br from-green-600 to-emerald-700'
                     : 'bg-gradient-to-br from-red-600 to-rose-700'
                 } text-white`}
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">
-                    SALDO FINAL (RATEIO)
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black uppercase">
+                    SALDO FINAL
                   </span>
-                  <span className="text-[9px] bg-black/20 px-1.5 py-0.5 rounded font-black uppercase">
-                    {saldoFinalMes >= 0 ? 'DENTRO DO AOP' : 'ESTOURO DE META'}
+                  <span className="text-[8px] bg-black/20 px-1.5 py-0.5 rounded font-black">
+                    {saldoFinalMes >= 0 ? 'DENTRO DO AOP' : 'ESTOURO'}
                   </span>
                 </div>
-                <h3 className="text-2xl font-black mt-3">
+                <h3 className="text-xl font-black mt-1">
                   {formatarMoeda(saldoFinalMes)}
                 </h3>
-                <p className="text-[10px] opacity-80 mt-1">
-                  (AOP + PROV) - (PEND + NFs)
-                </p>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#111A33]">
-                <div>
-                  <h3 className="text-sm font-black uppercase text-white flex items-center gap-2">
-                    <span>
-                      📋 Matriz Divisão de Rateio (Mês {mesSelecionadoFinanceiro})
-                    </span>
-                    {usandoRateioDireto && (
-                      <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                        Lido Diretamente da Aba DIVISÃO RATEIO
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-[11px] text-gray-400">
-                    Clique em qualquer conta abaixo para filtrar as OSs correspondentes na Base.
-                  </p>
-                </div>
-                {contaFiltroFinanceiro !== 'TODAS' && (
-                  <button
-                    onClick={() => setContaFiltroFinanceiro('TODAS')}
-                    className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3 py-1 rounded-lg hover:bg-rose-500 hover:text-white transition-all"
-                  >
-                    Limpar Filtro: {contaFiltroFinanceiro} ✕
-                  </button>
-                )}
+{/* SELETOR DE 3 ABAS FINANCEIRAS WIDESCREEN (ZERO-SCROLL COM TABELAS COMPLETAS!) */}
+<div className="flex flex-wrap items-center justify-between gap-2 bg-[#111A33] p-2 rounded-xl border border-gray-800">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={() => setSubVisaoFinanceiro('MATRIZES')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
+                    subVisaoFinanceiro === 'MATRIZES'
+                      ? 'bg-rose-500 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🏢 Ranking por CDV ({analisePorCdv.length} Unidades)
+                </button>
+                <button
+                  onClick={() => setSubVisaoFinanceiro('RATEIO_CONTAS')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
+                    subVisaoFinanceiro === 'RATEIO_CONTAS'
+                      ? 'bg-rose-500 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  📋 Matriz Divisão de Rateio (Mês {mesSelecionadoFinanceiro})
+                </button>
+                <button
+                  onClick={() => setSubVisaoFinanceiro('AUDITORIA_OS')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
+                    subVisaoFinanceiro === 'AUDITORIA_OS'
+                      ? 'bg-rose-500 text-white shadow-md'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🔍 Auditoria Detalhada de OSs ({listagemOsFinanceiroFiltrada.length})
+                </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs table-auto">
-                  <thead className="bg-[#0B1329] font-black text-gray-400 uppercase text-[10px] border-b border-gray-800">
-                    <tr>
-                      <th className="p-3.5">Conta Correção</th>
-                      <th className="p-3.5 text-right text-blue-400">AOP (Meta)</th>
-                      <th className="p-3.5 text-right text-indigo-400">PROV</th>
-                      <th className="p-3.5 text-right text-orange-400">PEND</th>
-                      <th className="p-3.5 text-right text-emerald-400">{labelNf1}</th>
-                      <th className="p-3.5 text-right text-emerald-400">{labelNf2}</th>
-                      <th className="p-3.5 text-right text-emerald-400">{labelNf3}</th>
-                      <th className="p-3.5 text-right text-emerald-400">{labelNf4}</th>
-                      <th className="p-3.5 text-right text-white">SALDO</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {linhasMatrizRateio.map((linha, index) => {
-                      const isTotal = String(linha.conta)
-                        .toUpperCase()
-                        .includes('TOTAL GERAL');
-                      const selecionada =
-                        contaFiltroFinanceiro ===
-                        String(linha.conta).toUpperCase();
+              {(contaFiltroFinanceiro !== 'TODAS' ||
+                cdvFiltroFinanceiro !== 'TODOS' ||
+                nfFiltroFinanceiro !== 'TODAS') && (
+                <button
+                  onClick={() => {
+                    setContaFiltroFinanceiro('TODAS');
+                    setCdvFiltroFinanceiro('TODOS');
+                    setNfFiltroFinanceiro('TODAS');
+                  }}
+                  className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2.5 py-1 rounded-lg"
+                >
+                  Limpar Filtros ({contaFiltroFinanceiro} / {cdvFiltroFinanceiro}) ✕
+                </button>
+              )}
+            </div>
 
-                      return (
-                        <tr
-                          key={index}
-                          onClick={() => {
-                            if (!isTotal) {
-                              const c = String(linha.conta).toUpperCase();
-                              setContaFiltroFinanceiro(
-                                contaFiltroFinanceiro === c ? 'TODAS' : c
+            {/* ==================================================================== */}
+            {/* ABA 1: DESEMPENHO ORÇAMENTÁRIO & RANKING POR CDV (COMPLETO COM BARRAS!) */}
+            {/* ==================================================================== */}
+            {subVisaoFinanceiro === 'MATRIZES' && (
+              <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl animate-fadeIn">
+                <div className="p-3.5 border-b border-gray-800 bg-[#111A33] flex flex-wrap justify-between items-center gap-2">
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-white flex items-center gap-2">
+                      <span>
+                        🏢 Desempenho Orçamentário & Ranking por CDV ({totalPlacasSul2} Placas)
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-gray-400">
+                      Comparativo entre o Orçamento Proporcional por frota vs. Gasto Real (BASE SUL II). Clique num CDV para ver suas OSs.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="max-h-[calc(100vh-290px)] overflow-y-auto">
+                  <table className="w-full text-left text-xs table-auto">
+                    <thead className="sticky top-0 bg-[#0B1329] font-black text-gray-400 uppercase text-[10px] border-b border-gray-800 z-10">
+                      <tr>
+                        <th className="p-3.5">Ranking / CDV</th>
+                        <th className="p-3.5 text-center">Placas</th>
+                        <th className="p-3.5 text-right">% Frota</th>
+                        <th className="p-3.5 text-right text-blue-400">
+                          Orçamento (Teto)
+                        </th>
+                        <th className="p-3.5 text-right text-amber-400">
+                          Gasto Real (Mês)
+                        </th>
+                        <th className="p-3.5 text-center">% do Orçamento</th>
+                        <th className="p-3.5 text-right">
+                          Estouro / Economia (%)
+                        </th>
+                        <th className="p-3.5 w-52">
+                          Peso no Gasto Geral
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {analisePorCdv.map((item, idx) => {
+                        const estourou = item.pctDoOrcamento > 100;
+                        const semOrcamento =
+                          item.orcamentoCdv === 0 && item.gastoReal > 0;
+                        const selecionado = cdvFiltroFinanceiro === item.cdv;
+
+                        return (
+                          <tr
+                            key={item.cdv}
+                            onClick={() => {
+                              setCdvFiltroFinanceiro(
+                                selecionado ? 'TODOS' : item.cdv
                               );
-                            }
-                          }}
-                          className={`transition-all ${
-                            isTotal
-                              ? 'bg-[#111A33] font-black text-white border-t-2 border-gray-700'
-                              : selecionada
-                              ? 'bg-rose-500/20 border-l-4 border-rose-500 cursor-pointer'
-                              : 'hover:bg-gray-800/30 cursor-pointer'
-                          }`}
-                        >
-                          <td className="p-3.5 font-black uppercase text-white">
-                            {linha.conta}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-blue-300">
-                            {formatarMoeda(linha.aop)}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-gray-400">
-                            {linha.prov ? formatarMoeda(linha.prov) : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-orange-400 font-bold">
-                            {linha.pend ? formatarMoeda(linha.pend) : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-gray-200">
-                            {linha.nf1 ? formatarMoeda(linha.nf1) : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-gray-200">
-                            {linha.nf2 ? formatarMoeda(linha.nf2) : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-gray-200">
-                            {linha.nf3 ? formatarMoeda(linha.nf3) : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-gray-200">
-                            {linha.nf4 ? formatarMoeda(linha.nf4) : '--'}
-                          </td>
-                          <td
-                            className={`p-3.5 text-right font-mono font-black ${
-                              Number(linha.saldo) >= 0
-                                ? 'text-green-400'
-                                : 'text-red-400'
+                              setSubVisaoFinanceiro('AUDITORIA_OS');
+                            }}
+                            className={`transition-all cursor-pointer ${
+                              selecionado
+                                ? 'bg-blue-500/20 border-l-4 border-blue-400'
+                                : 'hover:bg-gray-800/30'
                             }`}
                           >
-                            {formatarMoeda(linha.saldo)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#111A33]">
-                <div>
-                  <h3 className="text-sm font-black uppercase text-white flex items-center gap-2">
-                    <span>
-                      🏢 Desempenho Orçamentário & Ranking por CDV ({totalPlacasSul2 > 1 ? `${totalPlacasSul2} Placas` : 'Análise Dinâmica'})
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-gray-400">
-                    Comparativo entre o Orçamento Proporcional por frota da planilha vs. Gasto Real (BASE SUL II).
-                  </p>
-                </div>
-                {cdvFiltroFinanceiro !== 'TODOS' && (
-                  <button
-                    onClick={() => setCdvFiltroFinanceiro('TODOS')}
-                    className="text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/30 px-3 py-1 rounded-lg hover:bg-blue-500 hover:text-white transition-all"
-                  >
-                    Limpar Filtro CDV: {cdvFiltroFinanceiro} ✕
-                  </button>
-                )}
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs table-auto">
-                  <thead className="bg-[#0B1329] font-black text-gray-400 uppercase text-[10px] border-b border-gray-800">
-                    <tr>
-                      <th className="p-3.5">Ranking / CDV</th>
-                      <th className="p-3.5 text-center">Placas</th>
-                      <th className="p-3.5 text-right">% Frota</th>
-                      <th className="p-3.5 text-right text-blue-400">Orçamento (Teto)</th>
-                      <th className="p-3.5 text-right text-amber-400">Gasto Real (Mês)</th>
-                      <th className="p-3.5 text-center">% do Orçamento</th>
-                      <th className="p-3.5 text-right">Estouro / Economia (%)</th>
-                      <th className="p-3.5 w-44">Peso no Gasto Geral</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {analisePorCdv.map((item, idx) => {
-                      const estourou = item.pctDoOrcamento > 100;
-                      const semOrcamento =
-                        item.orcamentoCdv === 0 && item.gastoReal > 0;
-                      const selecionado = cdvFiltroFinanceiro === item.cdv;
-
-                      return (
-                        <tr
-                          key={item.cdv}
-                          onClick={() =>
-                            setCdvFiltroFinanceiro(
-                              selecionado ? 'TODOS' : item.cdv
-                            )
-                          }
-                          className={`transition-all cursor-pointer ${
-                            selecionado
-                              ? 'bg-blue-500/20 border-l-4 border-blue-400'
-                              : 'hover:bg-gray-800/30'
-                          }`}
-                        >
-                          <td className="p-3.5 font-black text-white flex items-center gap-2">
-                            <span className="text-[10px] font-mono bg-[#0B1329] text-gray-400 px-1.5 py-0.5 rounded border border-gray-700">
-                              #{idx + 1}
-                            </span>
-                            <span>{item.cdv}</span>
-                          </td>
-                          <td className="p-3.5 text-center font-mono font-bold text-gray-300">
-                            {item.placas > 0 ? item.placas : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-gray-400">
-                            {item.placas > 0
-                              ? `${item.pctFrota.toFixed(2)}%`
-                              : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono text-blue-300 font-semibold">
-                            {item.orcamentoCdv > 0
-                              ? formatarMoeda(item.orcamentoCdv)
-                              : '--'}
-                          </td>
-                          <td className="p-3.5 text-right font-mono font-black text-white">
-                            {formatarMoeda(item.gastoReal)}
-                          </td>
-                          <td className="p-3.5 text-center">
-                            {item.orcamentoCdv > 0 ? (
+                            <td className="p-3.5 font-black text-white flex items-center gap-2.5">
                               <span
-                                className={`text-[11px] font-mono font-black px-2 py-0.5 rounded ${
-                                  estourou
-                                    ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                                  idx === 0
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    : idx === 1
+                                    ? 'bg-slate-400/20 text-slate-200 border-slate-400/40'
+                                    : idx === 2
+                                    ? 'bg-orange-700/20 text-orange-300 border-orange-600/40'
+                                    : 'bg-[#0B1329] text-gray-400 border-gray-700'
                                 }`}
                               >
-                                {item.pctDoOrcamento.toFixed(2)}%
+                                #{idx + 1}
                               </span>
-                            ) : (
-                              <span className="text-[10px] text-gray-500">
-                                Extra SUL2
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3.5 text-right font-mono font-black">
-                            {item.orcamentoCdv > 0 ? (
-                              estourou ? (
-                                <span className="text-red-400">
-                                  +{item.pctEstouro.toFixed(2)}% acima 🔴
+                              <span>{item.cdv}</span>
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-bold text-gray-300">
+                              {item.placas > 0 ? item.placas : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-gray-400">
+                              {item.placas > 0
+                                ? `${item.pctFrota.toFixed(2)}%`
+                                : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-blue-300 font-semibold">
+                              {item.orcamentoCdv > 0
+                                ? formatarMoeda(item.orcamentoCdv)
+                                : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono font-black text-white">
+                              {formatarMoeda(item.gastoReal)}
+                            </td>
+                            <td className="p-3.5 text-center">
+                              {item.orcamentoCdv > 0 ? (
+                                <span
+                                  className={`text-[11px] font-mono font-black px-2.5 py-1 rounded-md ${
+                                    estourou
+                                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                      : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  }`}
+                                >
+                                  {item.pctDoOrcamento.toFixed(2)}%
                                 </span>
                               ) : (
-                                <span className="text-emerald-400">
-                                  {item.pctEstouro.toFixed(2)}% (Economia) 🟢
+                                <span className="text-[10px] text-gray-500">
+                                  Extra SUL2
                                 </span>
-                              )
-                            ) : semOrcamento ? (
-                              <span className="text-amber-400 text-[10px]">
-                                Sem Teto Local
-                              </span>
-                            ) : (
-                              '--'
-                            )}
-                          </td>
-                          <td className="p-3.5">
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-[#0B1329] rounded-full overflow-hidden border border-gray-800">
-                                <div
-                                  className={`h-full rounded-full ${
-                                    estourou
-                                      ? 'bg-gradient-to-r from-orange-500 to-red-500'
-                                      : 'bg-gradient-to-r from-blue-500 to-emerald-400'
-                                  }`}
-                                  style={{
-                                    width: `${Math.min(
-                                      item.shareGastoTotal,
-                                      100
-                                    )}%`,
-                                  }}
-                                ></div>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-right font-mono font-black">
+                              {item.orcamentoCdv > 0 ? (
+                                estourou ? (
+                                  <span className="text-red-400 inline-flex items-center gap-1.5">
+                                    <span>+{item.pctEstouro.toFixed(2)}% acima</span>
+                                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_#ef4444]" />
+                                  </span>
+                                ) : (
+                                  <span className="text-emerald-400 inline-flex items-center gap-1.5">
+                                    <span>{item.pctEstouro.toFixed(2)}% (Econ.)</span>
+                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                                  </span>
+                                )
+                              ) : semOrcamento ? (
+                                <span className="text-amber-400 text-[10px]">
+                                  Sem Teto Local
+                                </span>
+                              ) : (
+                                '--'
+                              )}
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex items-center gap-2.5">
+                                <div className="flex-1 h-2.5 bg-[#0B1329] rounded-full overflow-hidden border border-gray-800">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      estourou
+                                        ? 'bg-gradient-to-r from-orange-500 to-red-500'
+                                        : 'bg-gradient-to-r from-blue-500 to-emerald-400'
+                                    }`}
+                                    style={{
+                                      width: `${Math.min(
+                                        item.shareGastoTotal * 2.5,
+                                        100
+                                      )}%`,
+                                    }}
+                                  ></div>
+                                </div>
+                                <span className="font-mono text-[11px] font-black text-amber-400 w-12 text-right">
+                                  {item.shareGastoTotal.toFixed(1)}%
+                                </span>
                               </div>
-                              <span className="font-mono text-[10px] font-black text-amber-400 w-11 text-right">
-                                {item.shareGastoTotal.toFixed(1)}%
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl border border-gray-800 bg-[#111A33] flex items-center gap-3">
-              <Search size={18} className="text-gray-400" />
-              <input
-                type="text"
-                value={termoBuscaFinanceiro}
-                onChange={(e) => setTermoBuscaFinanceiro(e.target.value)}
-                placeholder="Pesquisar OS por Placa, Número da OS, CDV, Oficina ou NF..."
-                className="bg-transparent w-full outline-none text-xs text-white"
-              />
-            </div>
-
-            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
-              <div className="p-4 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-gray-500/5">
-                <div className="font-bold text-xs uppercase text-gray-400">
-                  Auditoria BASE (SUL II) — Conta:{' '}
-                  <span className="text-rose-400 font-black">
-                    {contaFiltroFinanceiro}
-                  </span>{' '}
-                  | CDV:{' '}
-                  <span className="text-blue-400 font-black">
-                    {cdvFiltroFinanceiro}
-                  </span>{' '}
-                  ({listagemOsFinanceiroFiltrada.length} OSs)
-                </div>
-                <div className="text-xs font-black text-emerald-400">
-                  Soma Filtrada:{' '}
-                  {formatarMoeda(
-                    listagemOsFinanceiroFiltrada.reduce(
-                      (acc, b) => acc + (Number(b.valor_total) || 0),
-                      0
-                    )
-                  )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-              <div className="max-h-[500px] overflow-y-auto">
-                <table className="w-full text-left text-xs table-auto">
-                  <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
-                    <tr>
-                      <th className="p-3.5">OS</th>
-                      <th className="p-3.5">Data</th>
-                      <th className="p-3.5">Placa</th>
-                      <th className="p-3.5">CDV</th>
-                      <th className="p-3.5">Estabelecimento / Oficina</th>
-                      <th className="p-3.5">Conta</th>
-                      <th className="p-3.5">Status</th>
-                      <th className="p-3.5">NF / Lote</th>
-                      <th className="p-3.5 text-right">Valor Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {listagemOsFinanceiroFiltrada.slice(0, 300).map((b, idx) => (
-                      <tr key={b.id || idx} className="hover:bg-gray-800/20">
-                        <td className="p-3.5 font-mono text-gray-300 font-bold">
-                          {b.os}
-                        </td>
-                        <td className="p-3.5 text-gray-400">
-                          {b.data_os
-                            ? new Date(
-                                b.data_os + 'T00:00:00'
-                              ).toLocaleDateString('pt-BR')
-                            : '--'}
-                        </td>
-                        <td className="p-3.5 font-mono font-black text-white">
-                          {b.placa}
-                        </td>
-                        <td className="p-3.5 uppercase text-blue-400 font-semibold">
-                          {b.cdv}
-                        </td>
-                        <td className="p-3.5 text-gray-300 truncate max-w-[200px]">
-                          {b.estabelecimento}
-                        </td>
-                        <td className="p-3.5">
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-gray-800 text-amber-400 uppercase">
-                            {b.conta_correcao}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-gray-300 text-[11px]">
-                          {b.status}
-                        </td>
-                        <td className="p-3.5">
-                          <span
-                            className={`text-[10px] font-black px-2 py-0.5 rounded ${
-                              b.nf === 'PEND'
-                                ? 'bg-orange-500/15 text-orange-400'
-                                : 'bg-emerald-500/15 text-emerald-400'
+            )}
+
+            {/* ==================================================================== */}
+            {/* ABA 2: MATRIZ OFICIAL DIVISÃO DE RATEIO (TODAS AS NFs + TERMÔMETRO) */}
+            {/* ==================================================================== */}
+            {subVisaoFinanceiro === 'RATEIO_CONTAS' && (
+              <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl animate-fadeIn">
+                <div className="p-3.5 border-b border-gray-800 bg-[#111A33] flex flex-wrap justify-between items-center gap-2">
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-white flex items-center gap-2">
+                      <span>
+                        📋 Matriz Oficial Divisão de Rateio (Mês {mesSelecionadoFinanceiro})
+                      </span>
+                      {usandoRateioDireto && (
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                          Leitura Direta da Aba DIVISÃO RATEIO
+                        </span>
+                      )}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs table-auto">
+                    <thead className="bg-[#0B1329] font-black text-gray-400 uppercase text-[10px] border-b border-gray-800">
+                      <tr>
+                        <th className="p-3.5">Conta Correção</th>
+                        <th className="p-3.5 text-right text-blue-400">AOP (Meta)</th>
+                        <th className="p-3.5 text-right text-indigo-400">PROV</th>
+                        <th className="p-3.5 text-right text-orange-400">PEND</th>
+                        <th className="p-3.5 text-right text-emerald-400">{labelNf1}</th>
+                        <th className="p-3.5 text-right text-emerald-400">{labelNf2}</th>
+                        <th className="p-3.5 text-right text-emerald-400">{labelNf3}</th>
+                        <th className="p-3.5 text-right text-emerald-400">{labelNf4}</th>
+                        <th className="p-3.5 text-right text-white">SALDO</th>
+                        <th className="p-3.5 w-44">Consumo do AOP</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {linhasMatrizRateio.map((linha, index) => {
+                        const isTotal = String(linha.conta)
+                          .toUpperCase()
+                          .includes('TOTAL GERAL');
+                        const tetoConta =
+                          (Number(linha.aop) || 0) + (Number(linha.prov) || 0);
+                        const gastoConta =
+                          (Number(linha.pend) || 0) +
+                          (Number(linha.nf1) || 0) +
+                          (Number(linha.nf2) || 0) +
+                          (Number(linha.nf3) || 0) +
+                          (Number(linha.nf4) || 0);
+                        const pctConsumo =
+                          tetoConta > 0 ? (gastoConta / tetoConta) * 100 : 0;
+                        const estourouConta = pctConsumo > 100;
+
+                        return (
+                          <tr
+                            key={index}
+                            onClick={() => {
+                              if (!isTotal) {
+                                setContaFiltroFinanceiro(
+                                  String(linha.conta).toUpperCase()
+                                );
+                                setSubVisaoFinanceiro('AUDITORIA_OS');
+                              }
+                            }}
+                            className={`transition-all ${
+                              isTotal
+                                ? 'bg-[#111A33] font-black text-white border-t-2 border-gray-700'
+                                : 'hover:bg-gray-800/30 cursor-pointer'
                             }`}
                           >
-                            {b.nf}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-right font-mono font-black text-white">
-                          {formatarMoeda(b.valor_total)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            <td className="p-3.5 font-black uppercase text-white">
+                              {linha.conta}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-blue-300">
+                              {formatarMoeda(linha.aop)}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-gray-400">
+                              {linha.prov ? formatarMoeda(linha.prov) : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-orange-400 font-bold">
+                              {linha.pend ? formatarMoeda(linha.pend) : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-gray-200">
+                              {linha.nf1 ? formatarMoeda(linha.nf1) : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-gray-200">
+                              {linha.nf2 ? formatarMoeda(linha.nf2) : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-gray-200">
+                              {linha.nf3 ? formatarMoeda(linha.nf3) : '--'}
+                            </td>
+                            <td className="p-3.5 text-right font-mono text-gray-200">
+                              {linha.nf4 ? formatarMoeda(linha.nf4) : '--'}
+                            </td>
+                            <td
+                              className={`p-3.5 text-right font-mono font-black ${
+                                Number(linha.saldo) >= 0
+                                  ? 'text-green-400'
+                                  : 'text-red-400'
+                              }`}
+                            >
+                              {formatarMoeda(linha.saldo)}
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-[#0B1329] rounded-full overflow-hidden border border-gray-800">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      estourouConta
+                                        ? 'bg-gradient-to-r from-orange-500 to-red-500'
+                                        : 'bg-gradient-to-r from-emerald-500 to-green-400'
+                                    }`}
+                                    style={{
+                                      width: `${Math.min(pctConsumo, 100)}%`,
+                                    }}
+                                  ></div>
+                                </div>
+                                <span
+                                  className={`font-mono text-[10px] font-black w-12 text-right ${
+                                    estourouConta
+                                      ? 'text-red-400'
+                                      : 'text-emerald-400'
+                                  }`}
+                                >
+                                  {pctConsumo.toFixed(0)}%
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* ==================================================================== */}
+            {/* ABA 3: AUDITORIA DETALHADA DE ORDENS DE SERVIÇO (BASE SUL II) */}
+            {/* ==================================================================== */}
+            {subVisaoFinanceiro === 'AUDITORIA_OS' && (
+              <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl animate-fadeIn">
+                <div className="p-3 border-b border-gray-800 flex flex-wrap justify-between items-center gap-2 bg-[#111A33]">
+                  <div className="flex items-center gap-2 flex-1 min-w-[240px] bg-[#0B1329] px-3 py-1.5 rounded-lg border border-gray-700">
+                    <Search size={14} className="text-gray-400" />
+                    <input
+                      type="text"
+                      value={termoBuscaFinanceiro}
+                      onChange={(e) => setTermoBuscaFinanceiro(e.target.value)}
+                      placeholder="Pesquisar OS por Placa, Número da OS, CDV, Oficina ou NF..."
+                      className="bg-transparent w-full outline-none text-xs text-white"
+                    />
+                  </div>
+                  <div className="text-xs font-black text-emerald-400">
+                    Soma ({listagemOsFinanceiroFiltrada.length} OSs):{' '}
+                    {formatarMoeda(
+                      listagemOsFinanceiroFiltrada.reduce(
+                        (acc, b) => acc + (Number(b.valor_total) || 0),
+                        0
+                      )
+                    )}
+                  </div>
+                </div>
+                <div className="max-h-[calc(100vh-290px)] overflow-y-auto">
+                  <table className="w-full text-left text-xs table-auto">
+                    <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
+                      <tr>
+                        <th className="p-3">OS</th>
+                        <th className="p-3">Data</th>
+                        <th className="p-3">Placa</th>
+                        <th className="p-3">CDV</th>
+                        <th className="p-3">Oficina</th>
+                        <th className="p-3">Conta</th>
+                        <th className="p-3">NF / Lote</th>
+                        <th className="p-3 text-right">Valor Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {listagemOsFinanceiroFiltrada
+                        .slice(0, 300)
+                        .map((b, idx) => (
+                          <tr
+                            key={b.id || idx}
+                            className="hover:bg-gray-800/20"
+                          >
+                            <td className="p-3 font-mono text-gray-300 font-bold">
+                              {b.os}
+                            </td>
+                            <td className="p-3 text-gray-400">
+                              {b.data_os
+                                ? new Date(
+                                    b.data_os + 'T00:00:00'
+                                  ).toLocaleDateString('pt-BR')
+                                : '--'}
+                            </td>
+                            <td className="p-3 font-mono font-black text-white">
+                              {b.placa}
+                            </td>
+                            <td className="p-3 uppercase text-blue-400 font-semibold">
+                              {b.cdv}
+                            </td>
+                            <td className="p-3 text-gray-300 truncate max-w-[180px]">
+                              {b.estabelecimento}
+                            </td>
+                            <td className="p-3">
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded bg-gray-800 text-amber-400 uppercase">
+                                {b.conta_correcao}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                                  b.nf === 'PEND'
+                                    ? 'bg-orange-500/15 text-orange-400'
+                                    : 'bg-emerald-500/15 text-emerald-400'
+                                }`}
+                              >
+                                {b.nf}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right font-mono font-black text-white">
+                              {formatarMoeda(b.valor_total)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* ============================================================================ */}
-        {/* --- TELA 5: ABA VEÍCULOS PARADOS + VITRINE 3D/2D (100% DA PLANILHA/BANCO) --- */}
+        {/* --- TELA 5: COCKPIT VEÍCULOS PARADOS 3D/2D LADO A LADO (ZERO-SCROLL!) --- */}
         {/* ============================================================================ */}
         {activeTab === 'veiculos_parados' && (
-          <div className="max-w-6xl mx-auto animate-fadeIn space-y-6">
-            {/* CABEÇALHO */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-800 pb-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                    <Truck className="text-cyan-400" size={26} />
-                    <span>Disponibilidade & Vitrine 3D/2D (VW 8.120)</span>
-                  </h2>
-                  <span className="text-[10px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-full font-bold">
-                    🕒 Última atualização: {ultimaAtuParados}
-                  </span>
-                </div>
-                <p className="text-gray-400 text-xs mt-0.5">
-                  Leitura 100% dinâmica da planilha "Controle de Veículos Parados" (Abas "Em Oficina" e "Resumo") integrada ao Supabase.
-                </p>
+          <div className="w-full animate-fadeIn space-y-3">
+            {/* LINHA 1: CABEÇALHO ULTRA-COMPACTO + FILTROS + UPLOAD NA MESMA BARRA */}
+            <div className="flex flex-wrap justify-between items-center gap-2 border-b border-gray-800 pb-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Truck className="text-cyan-400" size={22} />
+                <h2 className="text-xl font-black tracking-tight text-white">
+                  Cockpit de Disponibilidade & Vitrine 3D/2D
+                </h2>
+                <span className="text-[10px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                  🕒 {ultimaAtuParados}
+                </span>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Busca Rápida Placa */}
+                <div className="flex items-center gap-1.5 bg-[#1C2541] border border-gray-700 focus-within:border-cyan-400 px-2.5 py-1.5 rounded-xl w-44">
+                  <Search size={13} className="text-cyan-400 shrink-0" />
+                  <input
+                    type="text"
+                    value={buscaPlaca3DTopo}
+                    onChange={(e) => executarBuscaRapidaPlaca3D(e.target.value)}
+                    placeholder="Buscar Placa 3D..."
+                    className="bg-transparent w-full outline-none text-xs font-mono font-bold text-white uppercase"
+                  />
+                </div>
+
+                {/* Dropdown de Oficinas */}
+                <div className="flex items-center gap-1.5 bg-[#1C2541] border border-gray-700 px-2.5 py-1.5 rounded-xl">
+                  <Building2 size={13} className="text-amber-400 shrink-0" />
+                  <select
+                    value={filtroOficinaParados}
+                    onChange={(e) => setFiltroOficinaParados(e.target.value)}
+                    className="bg-transparent text-xs font-black text-white uppercase outline-none cursor-pointer"
+                  >
+                    <option value="TODAS" className="bg-[#0B1329] text-white">
+                      Oficinas ({oficinasUnicasParados.length})
+                    </option>
+                    {oficinasUnicasParados.map((ofic) => (
+                      <option
+                        key={ofic}
+                        value={ofic}
+                        className="bg-[#0B1329] text-white"
+                      >
+                        🏢 {ofic}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <button
                   onClick={limparTodaTabelaParados}
-                  className="bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+                  className="bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/20 text-xs font-black px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1"
+                  title="Limpar Banco de Parados"
                 >
-                  <Trash2 size={14} /> Limpar Banco
+                  <Trash2 size={13} />
                 </button>
-                <label className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer flex items-center gap-2 transition-all shadow-lg shadow-cyan-600/20">
-                  <Upload size={14} />
-                  Carregar Excel Parados
+
+                <label className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs px-3 py-1.5 rounded-xl cursor-pointer flex items-center gap-1.5 shadow-md">
+                  <Upload size={13} />
+                  <span>Carregar Excel</span>
                   <input
                     type="file"
                     accept=".xlsx, .xls"
@@ -5293,95 +5353,21 @@ function App() {
               </div>
             </div>
 
-            {/* BARRA DE COMANDO: BUSCADOR POR PLACA + DROPDOWN DE OFICINAS + SELETOR DE VEÍCULO */}
-            <div className="p-4 rounded-2xl border border-gray-800 bg-[#1C2541] grid grid-cols-1 md:grid-cols-3 gap-3 items-center shadow-lg">
-              <div className="flex items-center gap-2.5 bg-[#0B1329] border border-gray-700 focus-within:border-cyan-400 px-3.5 py-2 rounded-xl">
-                <Search size={16} className="text-cyan-400 shrink-0" />
-                <input
-                  type="text"
-                  value={buscaPlaca3DTopo}
-                  onChange={(e) => executarBuscaRapidaPlaca3D(e.target.value)}
-                  placeholder="Digitar Placa p/ Inspecionar no 3D/2D..."
-                  className="bg-transparent w-full outline-none text-xs font-mono font-bold text-white uppercase"
-                />
-                {buscaPlaca3DTopo && (
-                  <button
-                    onClick={() => setBuscaPlaca3DTopo('')}
-                    className="text-[10px] text-gray-400 hover:text-white font-black"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2.5 bg-[#0B1329] border border-gray-700 px-3.5 py-2 rounded-xl">
-                <Building2 size={16} className="text-amber-400 shrink-0" />
-                <div className="w-full">
-                  <span className="text-[9px] font-black text-gray-400 uppercase block leading-none">
-                    Filtrar por Oficina
-                  </span>
-                  <select
-                    value={filtroOficinaParados}
-                    onChange={(e) => setFiltroOficinaParados(e.target.value)}
-                    className="w-full bg-transparent text-xs font-black text-white uppercase outline-none cursor-pointer mt-0.5"
-                  >
-                    <option value="TODAS" className="bg-[#0B1329] text-white">
-                      Todas as Oficinas ({oficinasUnicasParados.length})
-                    </option>
-                    {oficinasUnicasParados.map((ofic) => (
-                      <option key={ofic} value={ofic} className="bg-[#0B1329] text-white">
-                        🏢 {ofic}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 bg-[#0B1329] border border-cyan-500/40 px-3.5 py-2 rounded-xl">
-                <Truck size={16} className="text-cyan-400 shrink-0" />
-                <div className="w-full">
-                  <span className="text-[9px] font-black text-cyan-400 uppercase block leading-none">
-                    Veículo em Foco na Vitrine
-                  </span>
-                  <select
-                    value={veiculo3dSelecionado?.placa || ''}
-                    onChange={(e) => {
-                      const achado = veiculosParados.find(
-                        (v) => v.placa === e.target.value
-                      );
-                      if (achado) setVeiculo3dSelecionado(achado);
-                    }}
-                    className="w-full bg-transparent text-xs font-black text-white uppercase outline-none cursor-pointer mt-0.5"
-                  >
-                    {veiculosParados.length === 0 ? (
-                      <option value="" className="bg-[#0B1329] text-gray-400">
-                        Carregue a planilha de Veículos Parados...
-                      </option>
-                    ) : (
-                      veiculosParados.map((v, i) => (
-                        <option key={`${v.placa}-${i}`} value={v.placa} className="bg-[#0B1329] text-white">
-                          {v.placa} — {v.status ? v.status.slice(0, 24) : 'Diagnóstico'}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* 4 CARDS DE DISPONIBILIDADE GERAL (CALCULADOS DA PLANILHA) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* LINHA 2: 4 CARDS COMPACTOS DE DISPONIBILIDADE */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div
                 onClick={() => setFiltroDispoParados('TODOS')}
-                className="p-4 rounded-xl border border-gray-800 cursor-pointer bg-gradient-to-br from-blue-600 to-indigo-700 text-white"
+                className="p-2.5 px-3.5 rounded-xl border border-gray-800 cursor-pointer bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex justify-between items-center"
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">FROTA TOTAL MAPEADA</span>
-                  <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-bold">ABA RESUMO</span>
+                <div>
+                  <span className="text-[10px] font-black uppercase block opacity-80">
+                    FROTA TOTAL MAPEADA
+                  </span>
+                  <h3 className="text-2xl font-black">{totalFrotaResumo}</h3>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {totalFrotaResumo} <span className="text-xs font-normal opacity-80">Veículos</span>
-                </h3>
+                <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded font-bold">
+                  POSIÇÃO NACIONAL
+                </span>
               </div>
 
               <div
@@ -5390,19 +5376,23 @@ function App() {
                     filtroDispoParados === 'DISPON' ? 'TODOS' : 'DISPON'
                   )
                 }
-                className={`p-4 rounded-xl border border-gray-800 cursor-pointer transition-all ${
-                  filtroDispoParados === 'DISPON' ? 'ring-4 ring-emerald-400' : ''
+                className={`p-2.5 px-3.5 rounded-xl border border-gray-800 cursor-pointer flex justify-between items-center ${
+                  filtroDispoParados === 'DISPON'
+                    ? 'ring-2 ring-emerald-400'
+                    : ''
                 } bg-gradient-to-br from-emerald-600 to-green-700 text-white`}
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">DISPONÍVEIS RODANDO</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-black">
-                    {pctDispoGeral}% DISPO
+                <div>
+                  <span className="text-[10px] font-black uppercase block opacity-80">
+                    DISPONÍVEIS RODANDO
                   </span>
+                  <h3 className="text-2xl font-black">
+                    {totalDisponivelResumo}
+                  </h3>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {totalDisponivelResumo} <span className="text-xs font-normal opacity-80">Placas</span>
-                </h3>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded font-black">
+                  {pctDispoGeral}%
+                </span>
               </div>
 
               <div
@@ -5411,22 +5401,22 @@ function App() {
                     filtroDispoParados === 'OFICINA' ? 'TODOS' : 'OFICINA'
                   )
                 }
-                className={`p-4 rounded-xl border border-gray-800 cursor-pointer transition-all ${
-                  filtroDispoParados === 'OFICINA' ? 'ring-4 ring-red-400' : ''
+                className={`p-2.5 px-3.5 rounded-xl border border-gray-800 cursor-pointer flex justify-between items-center ${
+                  filtroDispoParados === 'OFICINA' ? 'ring-2 ring-red-400' : ''
                 } bg-gradient-to-br from-rose-600 to-red-700 text-white`}
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">PARADOS EM OFICINA</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold">
-                    {totalFrotaResumo > 0
-                      ? ((totalOficinaResumo / totalFrotaResumo) * 100).toFixed(1)
-                      : '0.0'}
-                    %
+                <div>
+                  <span className="text-[10px] font-black uppercase block opacity-80">
+                    PARADOS EM OFICINA
                   </span>
+                  <h3 className="text-2xl font-black">{totalOficinaResumo}</h3>
                 </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {totalOficinaResumo} <span className="text-xs font-normal opacity-80">Placas</span>
-                </h3>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
+                  {totalFrotaResumo > 0
+                    ? ((totalOficinaResumo / totalFrotaResumo) * 100).toFixed(1)
+                    : '0.0'}
+                  %
+                </span>
               </div>
 
               <div
@@ -5435,394 +5425,399 @@ function App() {
                     filtroDispoParados === 'LIBERA' ? 'TODOS' : 'LIBERA'
                   )
                 }
-                className={`p-4 rounded-xl border border-gray-800 cursor-pointer transition-all ${
-                  filtroDispoParados === 'LIBERA' ? 'ring-4 ring-amber-400' : ''
+                className={`p-2.5 px-3.5 rounded-xl border border-gray-800 cursor-pointer flex justify-between items-center ${
+                  filtroDispoParados === 'LIBERA' ? 'ring-2 ring-amber-400' : ''
                 } bg-gradient-to-br from-amber-500 to-orange-600 text-white`}
               >
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] font-black uppercase">P/ LIBERAÇÃO IMEDIATA</span>
-                  <span className="text-[9px] bg-black/20 px-1.5 py-0.5 rounded font-black">PRONTOS</span>
-                </div>
-                <h3 className="text-3xl font-black mt-3">
-                  {totalLiberacaoResumo} <span className="text-xs font-normal opacity-80">Placa(s)</span>
-                </h3>
-              </div>
-            </div>
-
-            {/* VITRINE 3D/2D + FICHA DE TELEMETRIA LATERAL */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <VitrineCaminhao3D
-                veiculo={veiculo3dSelecionado}
-                zonaAtiva={zona3dAtiva}
-                filtroZona3D={filtroZona3D}
-                setFiltroZona3D={setFiltroZona3D}
-              />
-
-              <div className="lg:col-span-4 rounded-2xl border border-gray-800 bg-[#1C2541] p-5 shadow-xl flex flex-col justify-between space-y-4">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-gray-800 pb-3">
-                    <div>
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">
-                        Laudo de Telemetria Mecânica
-                      </span>
-                      <h4 className="text-2xl font-mono font-black text-white mt-0.5">
-                        {veiculo3dSelecionado?.placa || 'SEM PLACA'}
-                      </h4>
-                    </div>
-                    {veiculo3dSelecionado && (
-                      <span
-                        className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase ${
-                          String(veiculo3dSelecionado.disponibilidade)
-                            .toUpperCase()
-                            .includes('DISPON')
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : String(veiculo3dSelecionado.disponibilidade)
-                                .toUpperCase()
-                                .includes('LIBERA')
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        }`}
-                      >
-                        {veiculo3dSelecionado.disponibilidade}
-                      </span>
-                    )}
-                  </div>
-
-                  <div
-                    className="p-3.5 rounded-xl border"
-                    style={{
-                      backgroundColor: `${zona3dAtiva.cor}15`,
-                      borderColor: `${zona3dAtiva.cor}50`,
-                    }}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-black text-white shrink-0"
-                        style={{ backgroundColor: zona3dAtiva.cor }}
-                      >
-                        {zona3dAtiva.simbolo}
-                      </span>
-                      <div>
-                        <span className="text-[10px] font-black uppercase opacity-75 block">
-                          Sistema Afetado (3D / 2D)
-                        </span>
-                        <h5 className="text-sm font-black text-white">
-                          {zona3dAtiva.nome}
-                        </h5>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-gray-300 mt-2 leading-relaxed">
-                      {zona3dAtiva.descricao}
-                    </p>
-                  </div>
-
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
-                      <span className="text-gray-400 font-bold">Diagnóstico / Falha:</span>
-                      <span className="font-black text-amber-400 text-right max-w-[180px]">
-                        {veiculo3dSelecionado?.status || 'Carregue a planilha'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
-                      <span className="text-gray-400 font-bold">CDV / Unidade:</span>
-                      <span className="font-black text-blue-400">
-                        {veiculo3dSelecionado
-                          ? `${veiculo3dSelecionado.cdv} (${veiculo3dSelecionado.filial})`
-                          : '--'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
-                      <span className="text-gray-400 font-bold">Oficina Responsável:</span>
-                      <span className="font-bold text-white">
-                        {veiculo3dSelecionado?.oficina || '--'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
-                      <span className="text-gray-400 font-bold">Ordem de Serviço (OS):</span>
-                      <span className="font-mono font-bold text-gray-200">
-                        {veiculo3dSelecionado?.os || '--'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
-                      <span className="text-gray-400 font-bold">Orçamento Estimado:</span>
-                      <span className="font-mono font-black text-rose-400">
-                        {veiculo3dSelecionado?.valor > 0
-                          ? formatarMoeda(veiculo3dSelecionado.valor)
-                          : 'Aguardando Orçamento'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-[#0B1329] border border-gray-800 text-center">
-                  <span className="text-[10px] font-black uppercase text-gray-400 block">
-                    Disponibilidade Geral SUL2
-                  </span>
-                  <div className="text-2xl font-black text-emerald-400 mt-1">
-                    {pctDispoGeral}% <span className="text-xs text-gray-400 font-bold">Operacional</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* TABELA DE DISPONIBILIDADE POR CDV (LIDA DA ABA RESUMO / PLANILHA) */}
-            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-[#111A33]">
                 <div>
-                  <h3 className="text-sm font-black uppercase text-white">
-                    📊 Resumo de Disponibilidade Operacional por CDV ({resumoDispoCalculado.length} Unidades)
+                  <span className="text-[10px] font-black uppercase block opacity-80">
+                    P/ LIBERAÇÃO IMEDIATA
+                  </span>
+                  <h3 className="text-2xl font-black">
+                    {totalLiberacaoResumo}
                   </h3>
-                  <p className="text-[11px] text-gray-400">
-                    Extraído automaticamente da planilha importada. Clique em um CDV para filtrar os veículos abaixo.
-                  </p>
                 </div>
-                {filtroCdvParados !== 'TODOS' && (
-                  <button
-                    onClick={() => setFiltroCdvParados('TODOS')}
-                    className="text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-3 py-1 rounded-lg"
-                  >
-                    Mostrar Todos CDVs ({filtroCdvParados}) ✕
-                  </button>
-                )}
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs table-auto">
-                  <thead className="bg-[#0B1329] font-black text-gray-400 uppercase text-[10px] border-b border-gray-800">
-                    <tr>
-                      <th className="p-3.5">CDV Logístico</th>
-                      <th className="p-3.5 text-center text-emerald-400">Disponível</th>
-                      <th className="p-3.5 text-center text-rose-400">Em Oficina</th>
-                      <th className="p-3.5 text-center text-amber-400">P/ Liberação</th>
-                      <th className="p-3.5 text-center text-white">Total Frota</th>
-                      <th className="p-3.5 w-56">% Disponibilidade</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {resumoDispoCalculado.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-6 text-center text-gray-400 font-bold">
-                          Nenhum resumo carregado. Clique em "Carregar Excel Parados" no topo para analisar sua planilha.
-                        </td>
-                      </tr>
-                    ) : (
-                      resumoDispoCalculado.map((r, i) => {
-                        const selecionado = filtroCdvParados === r.cdv;
-                        const pct = Number(r.pct_dispo) || 0;
-
-                        // Regra das 4 faixas de cores (Azul = 100%, Verde = 95-99.9%, Amarelo = 90-94.9%, Vermelho < 90%)
-                        let corBarra = 'bg-gradient-to-r from-red-600 to-rose-500';
-                        let corTexto = 'text-red-400';
-                        let corLuz = 'bg-red-500 shadow-[0_0_8px_#ef4444]';
-
-                        if (pct >= 100) {
-                          corBarra = 'bg-gradient-to-r from-blue-500 to-cyan-400';
-                          corTexto = 'text-cyan-400';
-                          corLuz = 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]';
-                        } else if (pct >= 95) {
-                          corBarra = 'bg-gradient-to-r from-emerald-500 to-green-400';
-                          corTexto = 'text-emerald-400';
-                          corLuz = 'bg-emerald-400 shadow-[0_0_8px_#34d399]';
-                        } else if (pct >= 90) {
-                          corBarra = 'bg-gradient-to-r from-amber-500 to-yellow-400';
-                          corTexto = 'text-yellow-400';
-                          corLuz = 'bg-yellow-400 shadow-[0_0_8px_#facc15]';
-                        }
-
-                        return (
-                          <tr
-                            key={i}
-                            onClick={() =>
-                              setFiltroCdvParados(selecionado ? 'TODOS' : r.cdv)
-                            }
-                            className={`cursor-pointer transition-all ${
-                              selecionado
-                                ? 'bg-cyan-500/20 border-l-4 border-cyan-400'
-                                : 'hover:bg-gray-800/30'
-                            }`}
-                          >
-                            <td className="p-3.5 font-black text-white uppercase">
-                              {r.cdv}
-                            </td>
-                            <td className="p-3.5 text-center font-mono font-bold text-emerald-400">
-                              {r.disponivel}
-                            </td>
-                            <td className="p-3.5 text-center font-mono font-black text-rose-400">
-                              {r.em_oficina || 0}
-                            </td>
-                            <td className="p-3.5 text-center font-mono font-bold text-amber-400">
-                              {r.para_liberacao || 0}
-                            </td>
-                            <td className="p-3.5 text-center font-mono font-black text-white">
-                              {r.total_geral}
-                            </td>
-                            <td className="p-3.5">
-                              <div className="flex items-center gap-2.5">
-                                <span
-                                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${corLuz}`}
-                                />
-                                <div className="flex-1 h-2 bg-[#0B1329] rounded-full overflow-hidden border border-gray-800">
-                                  <div
-                                    className={`h-full rounded-full ${corBarra}`}
-                                    style={{ width: `${Math.min(pct, 100)}%` }}
-                                  ></div>
-                                </div>
-                                <span
-                                  className={`font-mono text-xs font-black w-14 text-right ${corTexto}`}
-                                >
-                                  {pct.toFixed(1)}%
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* BARRA DE PESQUISA GERAL DA TABELA DE VEÍCULOS PARADOS */}
-            <div className="p-4 rounded-xl border border-gray-800 bg-[#111A33] flex items-center gap-3">
-              <Search size={18} className="text-gray-400" />
-              <input
-                type="text"
-                value={termoBuscaParados}
-                onChange={(e) => setTermoBuscaParados(e.target.value)}
-                placeholder="Pesquisar na lista abaixo por Placa, Problema Mecânico, Oficina, Filial ou CDV..."
-                className="bg-transparent w-full outline-none text-xs text-white"
-              />
-              {(termoBuscaParados ||
-                filtroOficinaParados !== 'TODAS' ||
-                filtroZona3D !== 'TODAS' ||
-                filtroCdvParados !== 'TODOS' ||
-                filtroDispoParados !== 'TODOS') && (
-                <button
-                  onClick={() => {
-                    setTermoBuscaParados('');
-                    setFiltroOficinaParados('TODAS');
-                    setFiltroZona3D('TODAS');
-                    setFiltroCdvParados('TODOS');
-                    setFiltroDispoParados('TODOS');
-                  }}
-                  className="text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3 py-1 rounded-lg shrink-0"
-                >
-                  Limpar Todos Filtros ✕
-                </button>
-              )}
-            </div>
-
-            {/* LISTA COMPLETA DE VEÍCULOS PARADOS / EM OFICINA */}
-            <div className="rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-sm">
-              <div className="p-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-2 bg-gray-500/5">
-                <div className="font-bold text-xs uppercase text-gray-400">
-                  Veículos da Planilha ({listaVeiculosParadosFiltrada.length} Placas) • Oficina:{' '}
-                  <span className="text-amber-400 font-black">{filtroOficinaParados}</span> • Sistema:{' '}
-                  <span className="text-cyan-400 font-black">{filtroZona3D}</span>
-                </div>
-                <span className="text-[11px] text-yellow-400 font-black">
-                  💡 Clique em qualquer placa abaixo para ver a peça afetada brilhar em Neon no 3D/2D
+                <span className="text-[9px] bg-black/20 px-2 py-0.5 rounded font-black">
+                  PRONTOS
                 </span>
               </div>
+            </div>
 
-              <div className="max-h-[500px] overflow-y-auto">
-                <table className="w-full text-left text-xs table-auto">
-                  <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[10px] border-b border-gray-800">
-                    <tr>
-                      <th className="p-3.5">Placa</th>
-                      <th className="p-3.5">Filial</th>
-                      <th className="p-3.5">CDV</th>
-                      <th className="p-3.5">Oficina</th>
-                      <th className="p-3.5">Sistema (3D/2D)</th>
-                      <th className="p-3.5">Diagnóstico / Status</th>
-                      <th className="p-3.5">Ordem de Serviço</th>
-                      <th className="p-3.5 text-right">Orçamento (R$)</th>
-                      <th className="p-3.5 text-center">Situação</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {listaVeiculosParadosFiltrada.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="p-8 text-center text-gray-400 font-bold">
-                          Nenhum veículo encontrado. Suba o arquivo "Controle de Veículos Parados.xlsx" no botão azul acima.
-                        </td>
-                      </tr>
-                    ) : (
-                      listaVeiculosParadosFiltrada.map((v, index) => {
-                        const zona = identificarZonaDefeito3D(v.status);
-                        const isSelected = veiculo3dSelecionado?.placa === v.placa;
+            {/* LINHA 3: COCKPIT SPLIT-SCREEN (ESQUERDA: CAMINHÃO 3D/2D | DIREITA: PLACAS / CDVs / LAUDO) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+              {/* COLUNA ESQUERDA (7 COLUNAS): VITRINE 3D / ESQUEMA 2D */}
+              <div className="lg:col-span-7 flex flex-col">
+                <VitrineCaminhao3D
+                  veiculo={veiculo3dSelecionado}
+                  zonaAtiva={zona3dAtiva}
+                  filtroZona3D={filtroZona3D}
+                  setFiltroZona3D={setFiltroZona3D}
+                />
+              </div>
 
-                        return (
-                          <tr
-                            key={`${v.placa}-${index}`}
-                            onClick={() => setVeiculo3dSelecionado(v)}
-                            className={`cursor-pointer transition-all ${
-                              isSelected
-                                ? 'bg-cyan-500/20 border-l-4 border-cyan-400'
-                                : 'hover:bg-gray-800/30'
-                            }`}
-                          >
-                            <td className="p-3.5 font-mono font-black text-sm text-white">
-                              {v.placa}
-                            </td>
-                            <td className="p-3.5 uppercase text-gray-300 font-semibold">
-                              {v.filial}
-                            </td>
-                            <td className="p-3.5 uppercase text-blue-400 font-bold">
-                              {v.cdv}
-                            </td>
-                            <td className="p-3.5 uppercase text-gray-300 font-bold">
-                              {v.oficina}
-                            </td>
-                            <td className="p-3.5">
-                              <span
-                                className="text-[10px] font-black px-2 py-0.5 rounded border inline-flex items-center gap-1.5"
-                                style={{
-                                  backgroundColor: `${zona.cor}20`,
-                                  borderColor: `${zona.cor}50`,
-                                  color: '#fff',
-                                }}
-                              >
-                                <span
-                                  className="w-2 h-2 rounded-full"
-                                  style={{ backgroundColor: zona.cor }}
-                                />
-                                <span>{zona.id}</span>
-                              </span>
-                            </td>
-                            <td className="p-3.5 font-bold text-amber-300">
-                              {v.status || 'Em diagnóstico'}
-                            </td>
-                            <td className="p-3.5 font-mono text-gray-300">
-                              {v.os || '--'}
-                            </td>
-                            <td className="p-3.5 text-right font-mono font-black text-white">
-                              {v.valor > 0 ? formatarMoeda(v.valor) : '--'}
-                            </td>
-                            <td className="p-3.5 text-center">
-                              <span
-                                className={`text-[10px] font-black px-2.5 py-1 rounded uppercase ${
-                                  String(v.disponibilidade)
-                                    .toUpperCase()
-                                    .includes('DISPON')
-                                    ? 'bg-emerald-500/15 text-emerald-400'
-                                    : String(v.disponibilidade)
-                                        .toUpperCase()
-                                        .includes('LIBERA')
-                                    ? 'bg-amber-500/15 text-amber-400'
-                                    : 'bg-rose-500/15 text-rose-400'
-                                }`}
-                              >
-                                {v.disponibilidade}
-                              </span>
-                            </td>
+              {/* COLUNA DIREITA (5 COLUNAS): CENTRAL INTERATIVA DE PLACAS, RESUMO CDV E LAUDO */}
+              <div className="lg:col-span-5 rounded-2xl border border-gray-800 bg-[#1C2541] overflow-hidden shadow-2xl flex flex-col justify-between">
+                {/* ABAS DO PAINEL DIREITO */}
+                <div className="p-2.5 bg-[#111A33] border-b border-gray-800 flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setAbaLateralParados('PLACAS')}
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                        abaLateralParados === 'PLACAS'
+                          ? 'bg-cyan-500 text-gray-950 shadow'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      🚛 Placas ({listaVeiculosParadosFiltrada.length})
+                    </button>
+                    <button
+                      onClick={() => setAbaLateralParados('RESUMO_CDV')}
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                        abaLateralParados === 'RESUMO_CDV'
+                          ? 'bg-cyan-500 text-gray-950 shadow'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      🏢 Resumo CDV ({resumoDispoCalculado.length})
+                    </button>
+                    <button
+                      onClick={() => setAbaLateralParados('LAUDO')}
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                        abaLateralParados === 'LAUDO'
+                          ? 'bg-cyan-500 text-gray-950 shadow'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      🔬 Telemetria ({veiculo3dSelecionado?.placa || '--'})
+                    </button>
+                  </div>
+
+                  {(filtroCdvParados !== 'TODOS' ||
+                    filtroOficinaParados !== 'TODAS' ||
+                    filtroZona3D !== 'TODAS') && (
+                    <button
+                      onClick={() => {
+                        setFiltroCdvParados('TODOS');
+                        setFiltroOficinaParados('TODAS');
+                        setFiltroZona3D('TODAS');
+                        setFiltroDispoParados('TODOS');
+                      }}
+                      className="text-[9px] font-black bg-rose-500/20 text-rose-300 px-2 py-1 rounded"
+                    >
+                      Limpar ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* CONTEÚDO DA ABA SELECIONADA NO COCKPIT DIREITO */}
+                {abaLateralParados === 'PLACAS' && (
+                  <div className="flex-1 flex flex-col">
+                    <div className="p-2.5 border-b border-gray-800 bg-[#0B1329]/60 flex items-center gap-2">
+                      <Search size={14} className="text-gray-400" />
+                      <input
+                        type="text"
+                        value={termoBuscaParados}
+                        onChange={(e) => setTermoBuscaParados(e.target.value)}
+                        placeholder="Filtrar placa, falha (ex: Motor, Câmbio), oficina ou CDV..."
+                        className="bg-transparent w-full outline-none text-xs text-white"
+                      />
+                    </div>
+
+                    <div className="h-[385px] overflow-y-auto">
+                      <table className="w-full text-left text-[11px] table-auto">
+                        <thead className="sticky top-0 bg-[#111A33] font-bold text-gray-400 uppercase text-[9px] border-b border-gray-800">
+                          <tr>
+                            <th className="p-2.5">Placa</th>
+                            <th className="p-2.5">CDV / Oficina</th>
+                            <th className="p-2.5">Peça 3D</th>
+                            <th className="p-2.5">Diagnóstico</th>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-800">
+                          {listaVeiculosParadosFiltrada.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={4}
+                                className="p-6 text-center text-gray-400 font-bold"
+                              >
+                                Nenhum veículo. Suba a planilha em "Carregar Excel".
+                              </td>
+                            </tr>
+                          ) : (
+                            listaVeiculosParadosFiltrada.map((v, index) => {
+                              const zona = identificarZonaDefeito3D(v.status);
+                              const isSelected =
+                                veiculo3dSelecionado?.placa === v.placa;
+                              return (
+                                <tr
+                                  key={`${v.placa}-${index}`}
+                                  onClick={() => setVeiculo3dSelecionado(v)}
+                                  className={`cursor-pointer transition-all ${
+                                    isSelected
+                                      ? 'bg-cyan-500/20 border-l-4 border-cyan-400'
+                                      : 'hover:bg-gray-800/30'
+                                  }`}
+                                >
+                                  <td className="p-2.5 font-mono font-black text-white">
+                                    {v.placa}
+                                    <span
+                                      className={`block text-[8px] font-bold uppercase ${
+                                        String(v.disponibilidade)
+                                          .toUpperCase()
+                                          .includes('DISPON')
+                                          ? 'text-emerald-400'
+                                          : String(v.disponibilidade)
+                                              .toUpperCase()
+                                              .includes('LIBERA')
+                                          ? 'text-amber-400'
+                                          : 'text-rose-400'
+                                      }`}
+                                    >
+                                      {v.disponibilidade}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 uppercase">
+                                    <span className="text-blue-400 font-bold block truncate max-w-[110px]">
+                                      {v.cdv}
+                                    </span>
+                                    <span className="text-[9px] text-gray-400 truncate block max-w-[110px]">
+                                      {v.oficina}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5">
+                                    <span
+                                      className="text-[9px] font-black px-1.5 py-0.5 rounded border inline-flex items-center gap-1"
+                                      style={{
+                                        backgroundColor: `${zona.cor}20`,
+                                        borderColor: `${zona.cor}50`,
+                                        color: '#fff',
+                                      }}
+                                    >
+                                      <span
+                                        className="w-1.5 h-1.5 rounded-full"
+                                        style={{ backgroundColor: zona.cor }}
+                                      />
+                                      <span>{zona.id}</span>
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 font-bold text-amber-300 text-[10px]">
+                                    {v.status || 'Em diagnóstico'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {abaLateralParados === 'RESUMO_CDV' && (
+                  <div className="h-[425px] overflow-y-auto">
+                    <table className="w-full text-left text-[11px] table-auto">
+                      <thead className="sticky top-0 bg-[#0B1329] font-black text-gray-400 uppercase text-[9px] border-b border-gray-800">
+                        <tr>
+                          <th className="p-2.5">CDV</th>
+                          <th className="p-2.5 text-center text-emerald-400">
+                            Disp
+                          </th>
+                          <th className="p-2.5 text-center text-rose-400">
+                            Ofic
+                          </th>
+                          <th className="p-2.5 text-center text-white">Tot</th>
+                          <th className="p-2.5 w-36">% Dispo (Farol)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-800">
+                        {resumoDispoCalculado.map((r, i) => {
+                          const selecionado = filtroCdvParados === r.cdv;
+                          const pct = Number(r.pct_dispo) || 0;
+
+                          // REGRA DAS 4 FAIXAS DE CORES:
+                          // 100% = Azul | 95% a 99.9% = Verde | 90% a 94.9% = Amarelo | < 90% = Vermelho
+                          let corBarra =
+                            'bg-gradient-to-r from-red-600 to-rose-500';
+                          let corTexto = 'text-red-400';
+                          let corLuz = 'bg-red-500 shadow-[0_0_8px_#ef4444]';
+
+                          if (pct >= 100) {
+                            corBarra =
+                              'bg-gradient-to-r from-blue-500 to-cyan-400';
+                            corTexto = 'text-cyan-400';
+                            corLuz = 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]';
+                          } else if (pct >= 95) {
+                            corBarra =
+                              'bg-gradient-to-r from-emerald-500 to-green-400';
+                            corTexto = 'text-emerald-400';
+                            corLuz = 'bg-emerald-400 shadow-[0_0_8px_#34d399]';
+                          } else if (pct >= 90) {
+                            corBarra =
+                              'bg-gradient-to-r from-amber-500 to-yellow-400';
+                            corTexto = 'text-yellow-400';
+                            corLuz = 'bg-yellow-400 shadow-[0_0_8px_#facc15]';
+                          }
+
+                          return (
+                            <tr
+                              key={i}
+                              onClick={() => {
+                                setFiltroCdvParados(
+                                  selecionado ? 'TODOS' : r.cdv
+                                );
+                                setAbaLateralParados('PLACAS');
+                              }}
+                              className={`cursor-pointer transition-all ${
+                                selecionado
+                                  ? 'bg-cyan-500/20 border-l-4 border-cyan-400'
+                                  : 'hover:bg-gray-800/30'
+                              }`}
+                            >
+                              <td className="p-2.5 font-black text-white uppercase">
+                                {r.cdv}
+                              </td>
+                              <td className="p-2.5 text-center font-mono font-bold text-emerald-400">
+                                {r.disponivel}
+                              </td>
+                              <td className="p-2.5 text-center font-mono font-black text-rose-400">
+                                {r.em_oficina || 0}
+                              </td>
+                              <td className="p-2.5 text-center font-mono font-black text-white">
+                                {r.total_geral}
+                              </td>
+                              <td className="p-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${corLuz}`}
+                                  />
+                                  <div className="flex-1 h-2 bg-[#0B1329] rounded-full overflow-hidden border border-gray-800">
+                                    <div
+                                      className={`h-full rounded-full ${corBarra}`}
+                                      style={{
+                                        width: `${Math.min(pct, 100)}%`,
+                                      }}
+                                    ></div>
+                                  </div>
+                                  <span
+                                    className={`font-mono text-[11px] font-black w-12 text-right ${corTexto}`}
+                                  >
+                                    {pct.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {abaLateralParados === 'LAUDO' && (
+                  <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-gray-800 pb-2.5">
+                        <div>
+                          <span className="text-[10px] font-black text-gray-400 uppercase">
+                            Laudo de Telemetria Mecânica
+                          </span>
+                          <h4 className="text-2xl font-mono font-black text-white">
+                            {veiculo3dSelecionado?.placa || 'SEM PLACA'}
+                          </h4>
+                        </div>
+                        {veiculo3dSelecionado && (
+                          <span className="text-[10px] font-black px-2.5 py-1 rounded-full uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            {veiculo3dSelecionado.disponibilidade}
+                          </span>
+                        )}
+                      </div>
+
+                      <div
+                        className="p-3 rounded-xl border"
+                        style={{
+                          backgroundColor: `${zona3dAtiva.cor}15`,
+                          borderColor: `${zona3dAtiva.cor}50`,
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white shrink-0"
+                            style={{ backgroundColor: zona3dAtiva.cor }}
+                          >
+                            {zona3dAtiva.simbolo}
+                          </span>
+                          <h5 className="text-xs font-black text-white">
+                            {zona3dAtiva.nome}
+                          </h5>
+                        </div>
+                        <p className="text-[11px] text-gray-300 mt-1.5">
+                          {zona3dAtiva.descricao}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2 text-xs">
+                        <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                          <span className="text-gray-400 font-bold">Falha:</span>
+                          <span className="font-black text-amber-400 text-right">
+                            {veiculo3dSelecionado?.status || '--'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                          <span className="text-gray-400 font-bold">
+                            CDV / Filial:
+                          </span>
+                          <span className="font-black text-blue-400">
+                            {veiculo3dSelecionado?.cdv} (
+                            {veiculo3dSelecionado?.filial})
+                          </span>
+                        </div>
+                        <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                          <span className="text-gray-400 font-bold">
+                            Oficina:
+                          </span>
+                          <span className="font-bold text-white">
+                            {veiculo3dSelecionado?.oficina || '--'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between p-2.5 rounded-lg bg-[#0B1329]">
+                          <span className="text-gray-400 font-bold">
+                            OS / Valor:
+                          </span>
+                          <span className="font-mono font-black text-rose-400">
+                            {veiculo3dSelecionado?.os || '--'} •{' '}
+                            {veiculo3dSelecionado?.valor > 0
+                              ? formatarMoeda(veiculo3dSelecionado.valor)
+                              : 'Ag. Orçamento'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* RODAPÉ RÁPIDO DO PAINEL DIREITO COM MINI-RESUMO DA PLACA ATIVA */}
+                {veiculo3dSelecionado && abaLateralParados !== 'LAUDO' && (
+                  <div
+                    onClick={() => setAbaLateralParados('LAUDO')}
+                    className="p-2.5 bg-[#0B1329] border-t border-gray-800 flex items-center justify-between cursor-pointer hover:bg-gray-900 transition-all"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: zona3dAtiva.cor }}
+                      />
+                      <span className="font-mono font-black text-xs text-yellow-400">
+                        {veiculo3dSelecionado.placa}
+                      </span>
+                      <span className="text-[10px] font-bold text-gray-300 truncate max-w-[170px]">
+                        • {veiculo3dSelecionado.status}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-black text-cyan-400">
+                      Ver Laudo ▸
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
